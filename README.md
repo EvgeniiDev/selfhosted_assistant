@@ -50,16 +50,6 @@
 - Использование OpenAI-совместимого API LM Studio (http://127.0.0.1:1234)
 - **Полное логирование всех операций в файл**
 
-## Модули
-
-1. **request_classifier.py** - Модуль классификации запросов с системным промптом, использующий LM Studio API для определения типа запроса (событие или заметка)
-2. **google_calendar_client.py** - Клиент для работы с Google Calendar API
-3. **assistant_service.py** - Основной сервис ассистента, обрабатывающий как события, так и заметки
-4. **telegram_bot.py** - Telegram бот для взаимодействия с пользователем
-5. **models.py** - Модели данных для событий календаря и заметок
-6. **utils.py** - Утилиты для работы с датами и временем
-7. **logger.py** - Модуль логирования всех операций системы
-
 ## Установка и настройка
 
 ### 1. Установка LM Studio
@@ -96,6 +86,17 @@ pip install -r requirements.txt
 
 Скопируйте `.env.example` в `main.env` и заполните необходимые значения:
 
+
+### 6.Голосовые сообщения: VAD и ASR
+
+
+Скачайте модель Silero VAD и положите по пути, ожидаемому кодом:
+   
+   ```bash
+   mkdir -p /home/user/selfhosted_assistant/silero-vad/src/silero_vad/data
+   wget -O /home/user/selfhosted_assistant/silero-vad/src/silero_vad/data/silero_vad.jit \
+     https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.jit
+   ```
 
 ## Запуск
 
