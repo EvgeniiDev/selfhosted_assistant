@@ -69,7 +69,30 @@ class GoogleCalendarClient:
                 print(f"Причина: {browser_err}")
                 print("🔗 Режим авторизации по ссылке (console mode)")
                 print("📋 Войдите под аккаунтом разработчика (владельца приложения)")
-                creds = flow.run_console()
+
+                # Пытаемся использовать out-of-band метод через ввод кода вручную
+                try:
+                    # Некоторые версии и клиенты требуют явного указания OOB redirect URI
+                    try:
+                        flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
+                    except Exception:
+                        pass
+
+                    auth_url, _ = flow.authorization_url(
+                        prompt='consent',
+                        access_type='offline',
+                        include_granted_scopes='true'
+                    )
+
+                    print("\nОткройте эту ссылку в любом браузере:")
+                    print(auth_url)
+                    print("\nПосле подтверждения скопируйте код подтверждения и вставьте сюда.")
+                    code = input("Введите код авторизации: ").strip()
+
+                    flow.fetch_token(code=code)
+                    creds = flow.credentials
+                except Exception as manual_err:
+                    raise Exception(f"Не удалось выполнить авторизацию по ссылке: {manual_err}")
 
             # Выводим информацию для добавления в переменные окружения
             self._print_token_info(creds)
