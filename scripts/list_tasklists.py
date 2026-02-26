@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """List Google Tasks tasklists (id + title).
 
-Reads env vars from `main.env` if present (simple KEY=VALUE parsing) so the
-GOOGLE_OAUTH_TOKEN stored there will be used.
+Reads env vars from `.env` and `main.env` if present (simple KEY=VALUE parsing)
+so GOOGLE_OAUTH_TOKEN_V2 / GOOGLE_OAUTH_TOKEN from either file can be used.
 
 Usage:
   python scripts/list_tasklists.py
@@ -18,11 +18,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Load main.env if exists (simple loader)
-env_path = PROJECT_ROOT / 'main.env'
-if env_path.exists():
-    print(f"Loading env from {env_path}")
-    for raw in env_path.read_text(encoding='utf-8').splitlines():
+def _load_env_file(path: Path):
+    if not path.exists():
+        return
+
+    print(f"Loading env from {path}")
+    for raw in path.read_text(encoding='utf-8').splitlines():
         line = raw.strip()
         if not line or line.startswith('#'):
             continue
@@ -34,6 +35,10 @@ if env_path.exists():
         # Only set if not already set in environment
         if key not in os.environ:
             os.environ[key] = val
+
+
+_load_env_file(PROJECT_ROOT / '.env')
+_load_env_file(PROJECT_ROOT / 'main.env')
 
 try:
     from google_calendar_client import GoogleCalendarClient

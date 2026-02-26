@@ -59,7 +59,7 @@ pip install -r requirements.txt
 1. В Google Cloud включите **Google Calendar API** и **Google Tasks API**
 2. Создайте OAuth Client ID (Desktop)
 3. Положите `credentials.json` в корень проекта (или укажите путь через `GOOGLE_CREDENTIALS_PATH`)
-4. При первом запуске произойдет OAuth-авторизация и в консоли будет показан `GOOGLE_OAUTH_TOKEN`
+4. При первом запуске произойдет OAuth-авторизация и в консоли будет показан `GOOGLE_OAUTH_TOKEN_V2` (и legacy `GOOGLE_OAUTH_TOKEN`)
 
 ### 4) Настройка LLM
 
@@ -81,20 +81,30 @@ pip install -r requirements.txt
 
 - `TELEGRAM_BOT_TOKEN`
 - `GOOGLE_CREDENTIALS_PATH` (или `credentials.json` в корне)
-- `GOOGLE_OAUTH_TOKEN` (после первой авторизации)
+- `GOOGLE_OAUTH_TOKEN_V2` (после первой авторизации)
 
 Полный список используемых переменных:
 
 - `TELEGRAM_BOT_TOKEN` — токен Telegram-бота
 - `TELEGRAM_ALLOWED_USERS` — whitelist пользователей (`username`/`id` через запятую)
 - `GOOGLE_CREDENTIALS_PATH` — путь к OAuth credentials
+- `GOOGLE_OAUTH_TOKEN_V2` — основной OAuth token v2 (JSON с `client_id`, `client_secret`, `refresh_token`, `token_uri`)
 - `GOOGLE_OAUTH_TOKEN` — JSON-строка токена OAuth
+- `GOOGLE_OAUTH_CLIENT_CONFIG` — OAuth client config JSON (альтернатива `credentials.json` для интерактивной авторизации)
 - `GOOGLE_TASKLIST_ID` — id списка задач (иначе используется `@default`)
 - `TIMEZONE` — часовой пояс для событий/задач (по умолчанию `Europe/Moscow`)
 - `OPEN_ROUTER_API_KEY` — ключ OpenRouter
 - `GIGAAM_MODEL_NAME` — модель ASR (по умолчанию `v3_e2e_rnnt`)
 
 Примечание: файл `.env.example` содержит также исторические поля (`MODEL_PATH`, `DEFAULT_TIMEZONE`), которые текущим кодом напрямую не используются.
+
+### OAuth только через переменные окружения
+
+Можно работать без `credentials.json` на сервере:
+
+- В runtime достаточно `GOOGLE_OAUTH_TOKEN_V2` (предпочтительно).
+- Для одноразового получения/обновления токена можно задать `GOOGLE_OAUTH_CLIENT_CONFIG` (JSON OAuth client) и пройти интерактивную авторизацию.
+- После получения токена сохраните только `GOOGLE_OAUTH_TOKEN_V2` в `main.env`.
 
 ## Запуск
 

@@ -4,6 +4,7 @@ import os
 from typing import Union, Optional
 import time
 import tempfile
+from pydub import AudioSegment
 from telegram import File
 
 import gigaam
@@ -69,6 +70,32 @@ class VoiceService:
             raise RuntimeError("GigaAM model is not loaded")
 
         return self._transcribe_with_temp_wav(audio_data, use_shortform)
+
+    def _normalize_transcription_result(self, result) -> str:
+        if isinstance(result, str):
+            return result.strip()
+
+        if isinstance(result, list):
+            segments = []
+            for seg in result:
+                if isinstance(seg, dict):
+                    text = (
+                        seg.get("transcription")
+                        or seg.get("text")
+                        or seg.get("utterance")
+                    )
+                    if isinstance(text, str) and text.strip():
+                        segments.append(text.strip())
+                elif isinstance(seg, str) and seg.strip():
+                    segments.append(seg.strip())
+            return " ".join(segments).strip()
+
+        if isinstance(result, dict):
+            text = result.get("transcription") or result.get("text") or result.get("utterance")
+            if isinstance(text, str):
+                return text.strip()
+
+        return str(result).strip() if result is not None else ""
     
     async def transcribe_voice_message(self, voice_file: File) -> Optional[str]:
         return await self.transcribe_audio_file(voice_file, source_extension="ogg")
@@ -94,40 +121,30 @@ class VoiceService:
             file_bytes = await audio_file.download_as_bytearray()
 
             # Конвертируем в аудио формат, который понимает модель
-            audio_data = self._convert_audio_to_wav(file_bytes)
+            audio_data = self._convert_audio_to_wav(file_bytes, source_extension=safe_ext)
 
             # Короткая речь (<=25с) — однопроходный transcribe, иначе longform
             LONGFORM_THRESHOLD_SAMPLES = 25 * 16000
             use_shortform = int(audio_data.numel()) <= LONGFORM_THRESHOLD_SAMPLES
 
             result = self._run_transcription(audio_data, use_shortform)
-
-            # GigaAM.transcribe_longform возвращает список сегментов
-            if isinstance(result, list):
-                segments = []
-                for seg in result:
-                    if isinstance(seg, dict):
-                        text = seg.get("transcription")
-                        if isinstance(text, str) and text.strip():
-                            segments.append(text.strip())
-                    elif isinstance(seg, str) and seg.strip():
-                        segments.append(seg.strip())
-                transcription = " ".join(segments).strip()
-            elif isinstance(result, str):
-                transcription = result.strip()
-            else:
-                transcription = str(result).strip() if result is not None else ""
+            transcription = self._normalize_transcription_result(result)
 
             calendar_logger.info(
                 f"Аудио транскрибировано ({safe_ext}): {transcription if len(transcription) < 256 else transcription[:253] + '...'}"
             )
 
-            # Если пустая транскрипция — пробуем fallback (shortform)
-            if not transcription and not use_shortform:
+            # Если пустая транскрипция — пробуем альтернативный режим
+            if not transcription:
                 try:
-                    fallback = self._run_transcription(audio_data, use_shortform=True)
-                    if isinstance(fallback, str) and fallback.strip():
-                        return fallback.strip()
+                    fallback = self._run_transcription(audio_data, use_shortform=not use_shortform)
+                    fallback_text = self._normalize_transcription_result(fallback)
+                    if fallback_text:
+                        calendar_logger.info(
+                            f"Аудио транскрибировано через fallback ({'shortform' if not use_shortform else 'longform'}): "
+                            f"{fallback_text if len(fallback_text) < 256 else fallback_text[:253] + '...'}"
+                        )
+                        return fallback_text
                 except Exception as fb_err:
                     calendar_logger.log_error(fb_err, "voice_service.transcribe_audio_file.fallback")
 
@@ -162,7 +179,7 @@ class VoiceService:
                 calendar_logger.log_error(save_err, "voice_service.transcribe_audio_file.save_error_input")
             return None
     
-    def _convert_audio_to_wav(self, audio_bytes: bytearray) -> torch.Tensor:
+    def _convert_audio_to_wav(self, audio_bytes: bytearray, source_extension: str = "bin") -> torch.Tensor:
         """
         Конвертирует входное аудио в WAV формат и возвращает torch.Tensor
         
@@ -173,13 +190,30 @@ class VoiceService:
             torch.Tensor: аудио данные
         """
         import torchaudio
+        ext = (source_extension or "bin").lower().strip().lstrip(".")
+        if not ext or any(ch in ext for ch in "\\/:*?\"<>|"):
+            ext = "bin"
         
         try:
-            # Создаем BytesIO объект из байтов
-            audio_buffer = io.BytesIO(audio_bytes)
-            
-            # Загружаем аудио файл напрямую из памяти
-            waveform, sample_rate = torchaudio.load(audio_buffer)
+            waveform = None
+            sample_rate = None
+
+            tmp_audio_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp_audio:
+                    tmp_audio_path = tmp_audio.name
+                    tmp_audio.write(bytes(audio_bytes))
+
+                waveform, sample_rate = torchaudio.load(tmp_audio_path)
+            finally:
+                if tmp_audio_path and os.path.exists(tmp_audio_path):
+                    try:
+                        os.remove(tmp_audio_path)
+                    except OSError:
+                        pass
+
+            if waveform is None or sample_rate is None:
+                raise RuntimeError("Не удалось загрузить аудио через torchaudio")
             
             # Преобразуем в моно если нужно
             if waveform.shape[0] > 1:
@@ -202,8 +236,36 @@ class VoiceService:
             return waveform
                 
         except Exception as e:
-            calendar_logger.log_error(e, "voice_service._convert_audio_to_wav")
-            raise
+            calendar_logger.warning(f"torchaudio decode failed for {ext}, fallback to pydub: {str(e)}")
+            try:
+                source_buffer = io.BytesIO(audio_bytes)
+                file_format = ext if ext in {"mp3", "wav", "ogg"} else None
+                segment = AudioSegment.from_file(source_buffer, format=file_format)
+                segment = segment.set_channels(1).set_frame_rate(16000)
+
+                wav_buffer = io.BytesIO()
+                segment.export(wav_buffer, format="wav")
+                wav_buffer.seek(0)
+
+                waveform, sample_rate = torchaudio.load(wav_buffer)
+
+                if waveform.shape[0] > 1:
+                    waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+                waveform = waveform.squeeze(0)
+
+                if sample_rate != 16000:
+                    resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+                    waveform = resampler(waveform)
+
+                if waveform.dtype.is_floating_point:
+                    waveform = waveform.clamp_(-1.0, 1.0)
+
+                calendar_logger.info(f"Аудио конвертировано через pydub fallback: sample_rate={sample_rate}, shape={waveform.shape}")
+                return waveform
+            except Exception as fallback_error:
+                calendar_logger.log_error(fallback_error, "voice_service._convert_audio_to_wav.fallback")
+                raise
 
     
     def is_model_loaded(self) -> bool:

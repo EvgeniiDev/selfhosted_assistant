@@ -79,7 +79,7 @@ class AssistantService:
             if not self.calendar_client:
                 return {
                     'success': False,
-                    'message': f'Google Calendar не настроен: {self.google_init_error or "проверьте credentials.json и GOOGLE_OAUTH_TOKEN"}'
+                    'message': f'Google Calendar не настроен: {self.google_init_error or "проверьте GOOGLE_OAUTH_TOKEN_V2 (или credentials.json для первичной авторизации)"}'
                 }
 
             # Создаем событие в Google Calendar
@@ -187,7 +187,7 @@ class AssistantService:
             if not self.calendar_client:
                 return {
                     'success': False,
-                    'message': f'Google Tasks не настроен: {self.google_init_error or "проверьте credentials.json и GOOGLE_OAUTH_TOKEN"}'
+                    'message': f'Google Tasks не настроен: {self.google_init_error or "проверьте GOOGLE_OAUTH_TOKEN_V2 (или credentials.json для первичной авторизации)"}'
                 }
 
             task_payload = task.to_google_task()
