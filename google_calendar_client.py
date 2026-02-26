@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional
 import os
 import json
 import base64
+import sys
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -145,6 +146,12 @@ class GoogleCalendarClient:
         """Автоматическая OAuth аутентификация"""
         print("🚀 Запускаем автоматическую авторизацию...")
         print("💡 После авторизации скопируйте токен в main.env для будущего использования")
+
+        if not self._is_interactive_session():
+            raise Exception(
+                "Интерактивная OAuth-авторизация недоступна в non-interactive окружении (например, systemd). "
+                "Сгенерируйте токен один раз в интерактивной сессии и задайте GOOGLE_OAUTH_TOKEN_V2 в main.env."
+            )
         
         try:
             flow = InstalledAppFlow.from_client_config(
@@ -196,6 +203,12 @@ class GoogleCalendarClient:
 
         except Exception as e:
             raise Exception(f"❌ Ошибка автоматической авторизации: {str(e)}")
+
+    def _is_interactive_session(self) -> bool:
+        try:
+            return bool(sys.stdin and sys.stdin.isatty())
+        except Exception:
+            return False
 
     def _load_oauth_client_config(self) -> Dict[str, Any]:
         """Загружает OAuth client config в формате, подходящем для InstalledAppFlow.

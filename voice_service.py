@@ -71,6 +71,35 @@ class VoiceService:
 
         return self._transcribe_with_temp_wav(audio_data, use_shortform)
 
+    def _should_skip_longform(self, error: Exception) -> bool:
+        message = str(error).lower()
+        return (
+            "pyannote/segmentation-3.0" in message
+            or "hf_token" in message
+            or "segmentation" in message and "not found locally" in message
+        )
+
+    def _transcribe_by_chunks_shortform(self, audio_data: torch.Tensor, chunk_seconds: int = 20) -> str:
+        if self.model is None:
+            raise RuntimeError("GigaAM model is not loaded")
+
+        samples_per_chunk = max(1, int(chunk_seconds * 16000))
+        total_samples = int(audio_data.numel())
+        parts: list[str] = []
+
+        for start in range(0, total_samples, samples_per_chunk):
+            end = min(total_samples, start + samples_per_chunk)
+            chunk = audio_data[start:end]
+            if int(chunk.numel()) < 1600:
+                continue
+
+            chunk_result = self._run_transcription(chunk, use_shortform=True)
+            chunk_text = self._normalize_transcription_result(chunk_result)
+            if chunk_text:
+                parts.append(chunk_text)
+
+        return " ".join(parts).strip()
+
     def _extract_text_fragments(self, value: Any) -> list[str]:
         if value is None:
             return []
@@ -151,8 +180,17 @@ class VoiceService:
             LONGFORM_THRESHOLD_SAMPLES = 25 * 16000
             use_shortform = int(audio_data.numel()) <= LONGFORM_THRESHOLD_SAMPLES
 
-            result = self._run_transcription(audio_data, use_shortform)
-            transcription = self._normalize_transcription_result(result)
+            try:
+                result = self._run_transcription(audio_data, use_shortform)
+                transcription = self._normalize_transcription_result(result)
+            except Exception as primary_err:
+                if not use_shortform and self._should_skip_longform(primary_err):
+                    calendar_logger.warning(
+                        "Longform недоступен (нет pyannote/HF_TOKEN), использую shortform по чанкам"
+                    )
+                    transcription = self._transcribe_by_chunks_shortform(audio_data)
+                else:
+                    raise
 
             calendar_logger.info(
                 f"Аудио транскрибировано ({safe_ext}): {transcription if len(transcription) < 256 else transcription[:253] + '...'}"
@@ -161,16 +199,31 @@ class VoiceService:
             # Если пустая транскрипция — пробуем альтернативный режим
             if not transcription:
                 try:
-                    fallback = self._run_transcription(audio_data, use_shortform=not use_shortform)
-                    fallback_text = self._normalize_transcription_result(fallback)
+                    if use_shortform:
+                        fallback = self._run_transcription(audio_data, use_shortform=False)
+                        fallback_text = self._normalize_transcription_result(fallback)
+                    else:
+                        fallback_text = self._transcribe_by_chunks_shortform(audio_data)
+
                     if fallback_text:
                         calendar_logger.info(
-                            f"Аудио транскрибировано через fallback ({'shortform' if not use_shortform else 'longform'}): "
+                            f"Аудио транскрибировано через fallback ({'longform' if use_shortform else 'chunked-shortform'}): "
                             f"{fallback_text if len(fallback_text) < 256 else fallback_text[:253] + '...'}"
                         )
                         return fallback_text
                 except Exception as fb_err:
-                    calendar_logger.log_error(fb_err, "voice_service.transcribe_audio_file.fallback")
+                    if use_shortform and self._should_skip_longform(fb_err):
+                        calendar_logger.warning(
+                            "Fallback longform недоступен (нет pyannote/HF_TOKEN), пробую chunked-shortform"
+                        )
+                        try:
+                            chunked_text = self._transcribe_by_chunks_shortform(audio_data)
+                            if chunked_text:
+                                return chunked_text
+                        except Exception as chunk_err:
+                            calendar_logger.log_error(chunk_err, "voice_service.transcribe_audio_file.chunked_fallback")
+                    else:
+                        calendar_logger.log_error(fb_err, "voice_service.transcribe_audio_file.fallback")
 
             # Если всё равно пусто — сохраняем вход для отладки
             if not transcription:

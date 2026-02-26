@@ -95,6 +95,7 @@ pip install -r requirements.txt
 - `TIMEZONE` — часовой пояс для событий/задач (по умолчанию `Europe/Moscow`)
 - `OPEN_ROUTER_API_KEY` — ключ OpenRouter
 - `GIGAAM_MODEL_NAME` — модель ASR (по умолчанию `v3_e2e_rnnt`)
+- `HF_TOKEN` — Hugging Face токен. Нужен для первичной загрузки `pyannote/segmentation-3.0` для `transcribe_longform` (длинные аудио)
 
 Примечание: файл `.env.example` содержит также исторические поля (`MODEL_PATH`, `DEFAULT_TIMEZONE`), которые текущим кодом напрямую не используются.
 
@@ -105,6 +106,7 @@ pip install -r requirements.txt
 - В runtime достаточно `GOOGLE_OAUTH_TOKEN_V2` (предпочтительно).
 - Для одноразового получения/обновления токена можно задать `GOOGLE_OAUTH_CLIENT_CONFIG` (JSON OAuth client) и пройти интерактивную авторизацию.
 - После получения токена сохраните только `GOOGLE_OAUTH_TOKEN_V2` в `main.env`.
+- В non-interactive окружении (например, `systemd`) интерактивный OAuth отключен: сервис не запрашивает код в консоли и требует заранее заданный `GOOGLE_OAUTH_TOKEN_V2`.
 
 ## Запуск
 
