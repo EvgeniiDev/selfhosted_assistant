@@ -10,7 +10,14 @@ from logger import calendar_logger
 class AssistantService:
     def __init__(self):
         self.inference = RequestClassifier()
-        self.calendar_client = GoogleCalendarClient()
+        self.calendar_client = None
+        self.google_init_error = None
+
+        try:
+            self.calendar_client = GoogleCalendarClient()
+        except Exception as e:
+            self.google_init_error = str(e)
+            calendar_logger.log_error(e, "assistant_service.__init__ - GoogleCalendarClient")
 
     def process_user_request(self, user_message: str) -> Dict[str, Any]:
         """Обрабатывает запрос пользователя и создает событие в календаре или возвращает заметку"""
@@ -69,6 +76,12 @@ class AssistantService:
     def create_confirmed_event(self, calendar_event: CalendarEvent) -> Dict[str, Any]:
         """Создает подтвержденное событие в Google Calendar"""
         try:
+            if not self.calendar_client:
+                return {
+                    'success': False,
+                    'message': f'Google Calendar не настроен: {self.google_init_error or "проверьте credentials.json и GOOGLE_OAUTH_TOKEN"}'
+                }
+
             # Создаем событие в Google Calendar
             google_event_data = calendar_event.to_google_event()
             result = self.calendar_client.create_event(google_event_data)
@@ -171,6 +184,12 @@ class AssistantService:
     def create_confirmed_task(self, task: Task) -> Dict[str, Any]:
         """Создает подтвержденную задачу через Google Tasks API"""
         try:
+            if not self.calendar_client:
+                return {
+                    'success': False,
+                    'message': f'Google Tasks не настроен: {self.google_init_error or "проверьте credentials.json и GOOGLE_OAUTH_TOKEN"}'
+                }
+
             task_payload = task.to_google_task()
             result = self.calendar_client.create_task(task_payload)
             return result or {

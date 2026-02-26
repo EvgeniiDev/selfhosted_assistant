@@ -1,6 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import os
+from typing import Optional, Tuple
 
 try:
     from dotenv import load_dotenv
@@ -14,6 +15,8 @@ from logger import calendar_logger
 
 
 class TelegramBot:
+    SUPPORTED_AUDIO_EXTENSIONS = {"mp3", "wav"}
+
     def __init__(self, token: str):
         self.token = token
         self.assistant_service = AssistantService()
@@ -84,6 +87,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))  # Обработчик голосовых сообщений
+        self.application.add_handler(MessageHandler(filters.AUDIO | filters.Document.ALL, self.handle_audio_file_message))
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,7 +101,8 @@ class TelegramBot:
             "Привет! Я ассистент для создания событий в Google Calendar и сохранения заметок.\n\n"
             "Вы можете:\n"
             "📝 Написать текстовое сообщение\n"
-            "🎤 Записать голосовое сообщение\n\n"
+            "🎤 Записать голосовое сообщение\n"
+            "🎵 Отправить аудиофайл (mp3/wav)\n\n"
             "Примеры запросов:\n"
             "📅 **Календарные события:**\n"
             "• 'Встреча с командой завтра в 14:00 на час'\n"
@@ -123,7 +128,7 @@ class TelegramBot:
             "Как использовать бота:\n\n"
             "📅 **Для календарных событий:**\n"
             "1️⃣ Отправьте описание события:\n"
-            "   📝 Текстовое сообщение или 🎤 Голосовое сообщение\n"
+            "   📝 Текстовое сообщение, 🎤 голосовое сообщение или 🎵 аудиофайл (mp3/wav)\n"
             "2️⃣ Проверьте детали события в предварительном просмотре\n"
             "3️⃣ Нажмите \"✅ Подтвердить\" для создания или \"❌ Отменить\"\n"
             "4️⃣ Если что-то не так, нажмите \"✏️ Редактировать\"\n\n"
@@ -144,7 +149,7 @@ class TelegramBot:
             "• 'Запомни номер телефона: +7-123-456-78-90'\n\n"
             "🤖 **Автоматическое определение типа:**\n"
             "Бот сам определит, хотите ли вы создать событие в календаре (с указанием времени) или просто сохранить заметку.\n\n"
-            "🎤 Голосовые сообщения автоматически распознаются и обрабатываются как текст."
+            "🎤 Голосовые сообщения и 🎵 аудиофайлы (mp3/wav) автоматически распознаются и обрабатываются как текст."
         )
         await update.message.reply_text(help_message)
 
@@ -194,6 +199,88 @@ class TelegramBot:
             calendar_logger.log_error(e, "telegram_bot.handle_voice_message")
             error_message = f"❌ Произошла ошибка при обработке голосового сообщения: {str(e)}"
             await processing_message.edit_text(error_message)
+
+    def _detect_audio_extension(self, filename: Optional[str], mime_type: Optional[str]) -> Optional[str]:
+        if filename and "." in filename:
+            ext = filename.rsplit(".", 1)[-1].lower()
+            if ext in self.SUPPORTED_AUDIO_EXTENSIONS:
+                return ext
+
+        if mime_type:
+            normalized = mime_type.lower().split(";", 1)[0].strip()
+            if normalized in {"audio/mpeg", "audio/mp3"}:
+                return "mp3"
+            if normalized in {"audio/wav", "audio/x-wav", "audio/wave"}:
+                return "wav"
+
+        return None
+
+    async def handle_audio_file_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик аудиофайлов (mp3/wav)"""
+        if not self._is_user_allowed(update):
+            await self._send_access_denied_message(update)
+            return
+
+        message = update.message
+        if not message:
+            return
+
+        user_id = str(update.effective_user.id) if update.effective_user else None
+        username = update.effective_user.username if update.effective_user else None
+
+        audio_obj = None
+        filename = None
+        mime_type = None
+        source_label = "AUDIO"
+
+        if message.audio:
+            audio_obj = message.audio
+            filename = message.audio.file_name
+            mime_type = message.audio.mime_type
+        elif message.document:
+            filename = message.document.file_name
+            mime_type = message.document.mime_type
+            ext = self._detect_audio_extension(filename, mime_type)
+            if ext:
+                audio_obj = message.document
+                source_label = "AUDIO_FILE"
+
+        if audio_obj is None:
+            return
+
+        detected_ext = self._detect_audio_extension(filename, mime_type)
+        if detected_ext is None:
+            await message.reply_text("❌ Поддерживаются только аудиофайлы в форматах mp3 и wav.")
+            return
+
+        processing_message = await message.reply_text("🎵 Обрабатываю аудиофайл...")
+
+        try:
+            if not self.voice_service.is_model_loaded():
+                await processing_message.edit_text("❌ Модель распознавания речи не загружена")
+                return
+
+            tg_file = await context.bot.get_file(audio_obj.file_id)
+            await processing_message.edit_text("🎵 Распознаю речь...")
+
+            transcription = await self.voice_service.transcribe_audio_file(tg_file, source_extension=detected_ext)
+
+            if not transcription:
+                await processing_message.edit_text("❌ Не удалось распознать речь из аудиофайла. Попробуйте другой файл.")
+                return
+
+            calendar_logger.log_user_request(user_id, username, f"[{source_label}] {transcription}")
+
+            await processing_message.edit_text(
+                f"🎵 Распознанный текст: *{transcription}*\n\nОбрабатываю запрос...",
+                parse_mode='Markdown'
+            )
+
+            await self._process_text_request(update, transcription, processing_message)
+
+        except Exception as e:
+            calendar_logger.log_error(e, "telegram_bot.handle_audio_file_message")
+            await processing_message.edit_text(f"❌ Произошла ошибка при обработке аудиофайла: {str(e)}")
 
     async def _process_text_request(self, update: Update, user_message: str, processing_message=None):
         """Общий метод для обработки текстовых запросов"""
