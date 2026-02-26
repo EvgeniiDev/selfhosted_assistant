@@ -3,13 +3,9 @@ import torch
 import os
 from typing import Union, Optional
 import time
+import tempfile
 from telegram import File
 
-# Импортируем GigaAM из локальной папки
-import sys
-gigaam_path = os.path.join(os.path.dirname(__file__), 'GigaAM-upgraded')
-if gigaam_path not in sys.path:
-    sys.path.insert(0, gigaam_path)
 import gigaam
 
 
@@ -27,6 +23,7 @@ class VoiceService:
             device: устройство для инференса ("cpu" или "cuda")
         """
         self.device = device
+        self.model_name = os.getenv("GIGAAM_MODEL_NAME", "v3_e2e_rnnt")
         self.model = None
         self._load_model()
     
@@ -34,14 +31,44 @@ class VoiceService:
         """Загружает модель GigaAM для распознавания речи"""
         try:
             self.model = gigaam.load_model(
-                "v2_ctc",  # GigaAM-V2 CTC model
+                self.model_name,
                 device=self.device
             )
-            calendar_logger.info("Модель GigaAM успешно загружена")
+            calendar_logger.info(f"Модель GigaAM успешно загружена: {self.model_name}")
         except Exception as e:
             calendar_logger.log_error(e, "voice_service._load_model")
             print(f"Ошибка загрузки модели GigaAM: {str(e)}")
             self.model = None
+
+    def _transcribe_with_temp_wav(self, audio_data: torch.Tensor, use_shortform: bool):
+        import torchaudio
+
+        if self.model is None:
+            raise RuntimeError("GigaAM model is not loaded")
+
+        model = self.model
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            torchaudio.save(tmp_path, audio_data.unsqueeze(0).cpu(), 16000)
+
+            if use_shortform:
+                return model.transcribe(tmp_path)
+            return model.transcribe_longform(tmp_path)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    def _run_transcription(self, audio_data: torch.Tensor, use_shortform: bool):
+        if self.model is None:
+            raise RuntimeError("GigaAM model is not loaded")
+
+        return self._transcribe_with_temp_wav(audio_data, use_shortform)
     
     async def transcribe_voice_message(self, voice_file: File) -> Optional[str]:
         """
@@ -53,6 +80,7 @@ class VoiceService:
         Returns:
             str: транскрибированный текст или None в случае ошибки
         """
+        file_bytes = None
         try:
             # Скачиваем файл в память
             file_bytes = await voice_file.download_as_bytearray()
@@ -64,10 +92,7 @@ class VoiceService:
             LONGFORM_THRESHOLD_SAMPLES = 25 * 16000
             use_shortform = int(audio_data.numel()) <= LONGFORM_THRESHOLD_SAMPLES
 
-            if use_shortform:
-                result = self.model.transcribe(audio_data, sample_rate=16000)
-            else:
-                result = self.model.transcribe_longform(audio_data, sample_rate=16000)
+            result = self._run_transcription(audio_data, use_shortform)
 
             # GigaAM.transcribe_longform возвращает список сегментов
             if isinstance(result, list):
@@ -92,7 +117,7 @@ class VoiceService:
             # Если пустая транскрипция — пробуем fallback (shortform)
             if not transcription and not use_shortform:
                 try:
-                    fallback = self.model.transcribe(audio_data, sample_rate=16000)
+                    fallback = self._run_transcription(audio_data, use_shortform=True)
                     if isinstance(fallback, str) and fallback.strip():
                         return fallback.strip()
                 except Exception as fb_err:
@@ -118,7 +143,7 @@ class VoiceService:
             calendar_logger.log_error(e, "voice_service.transcribe_voice_message")
             # Пытаемся сохранить входные данные на случай ошибки
             try:
-                if 'file_bytes' in locals():
+                if file_bytes is not None:
                     dbg_dir = os.path.join(os.path.dirname(__file__), "debug_audio")
                     os.makedirs(dbg_dir, exist_ok=True)
                     ts = int(time.time())

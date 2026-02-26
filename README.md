@@ -89,14 +89,11 @@ pip install -r requirements.txt
 
 ### 6.Голосовые сообщения: VAD и ASR
 
+Проект использует оригинальный `gigaam` из [`salute-developers/GigaAM`](https://github.com/salute-developers/GigaAM) как pip/git-зависимость (см. `requirements.txt`), без локального вендоринга исходников.
 
-Скачайте модель Silero VAD и положите по пути, ожидаемому кодом:
-   
-   ```bash
-   mkdir -p /home/user/selfhosted_assistant/silero-vad/src/silero_vad/data
-   wget -O /home/user/selfhosted_assistant/silero-vad/src/silero_vad/data/silero_vad.jit \
-     https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.jit
-   ```
+- На первом запуске `gigaam.load_model(...)` автоматически скачивает веса модели в локальный кэш (`~/.cache/gigaam`).
+- По умолчанию в сервисе используется `v3_e2e_rnnt` (поддержка пунктуации и нормализации текста).
+- Модель можно переопределить через переменную окружения `GIGAAM_MODEL_NAME`.
 
 ## Запуск
 
