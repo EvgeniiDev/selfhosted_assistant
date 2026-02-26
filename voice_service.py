@@ -1,7 +1,7 @@
 import io
 import torch
 import os
-from typing import Union, Optional
+from typing import Any, Optional
 import time
 import tempfile
 from pydub import AudioSegment
@@ -71,29 +71,53 @@ class VoiceService:
 
         return self._transcribe_with_temp_wav(audio_data, use_shortform)
 
+    def _extract_text_fragments(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+
+        if isinstance(value, dict):
+            fragments: list[str] = []
+
+            for key in (
+                "transcription", "text", "utterance", "sentence", "content", "result", "prediction"
+            ):
+                if key in value:
+                    fragments.extend(self._extract_text_fragments(value.get(key)))
+
+            for key in (
+                "segments", "items", "hypotheses", "alternatives", "words", "chunks", "results"
+            ):
+                if key in value:
+                    fragments.extend(self._extract_text_fragments(value.get(key)))
+
+            if not fragments:
+                for nested in value.values():
+                    fragments.extend(self._extract_text_fragments(nested))
+
+            return [frag for frag in fragments if frag]
+
+        if isinstance(value, (list, tuple)):
+            fragments: list[str] = []
+            for item in value:
+                fragments.extend(self._extract_text_fragments(item))
+            return [frag for frag in fragments if frag]
+
+        return []
+
     def _normalize_transcription_result(self, result) -> str:
-        if isinstance(result, str):
-            return result.strip()
-
-        if isinstance(result, list):
-            segments = []
-            for seg in result:
-                if isinstance(seg, dict):
-                    text = (
-                        seg.get("transcription")
-                        or seg.get("text")
-                        or seg.get("utterance")
-                    )
-                    if isinstance(text, str) and text.strip():
-                        segments.append(text.strip())
-                elif isinstance(seg, str) and seg.strip():
-                    segments.append(seg.strip())
-            return " ".join(segments).strip()
-
-        if isinstance(result, dict):
-            text = result.get("transcription") or result.get("text") or result.get("utterance")
-            if isinstance(text, str):
-                return text.strip()
+        fragments = self._extract_text_fragments(result)
+        if fragments:
+            seen = set()
+            unique_fragments = []
+            for fragment in fragments:
+                if fragment not in seen:
+                    seen.add(fragment)
+                    unique_fragments.append(fragment)
+            return " ".join(unique_fragments).strip()
 
         return str(result).strip() if result is not None else ""
     

@@ -15,7 +15,9 @@ from logger import calendar_logger
 
 
 class TelegramBot:
-    SUPPORTED_AUDIO_EXTENSIONS = {"mp3", "wav"}
+    SUPPORTED_AUDIO_EXTENSIONS = {
+        "mp3", "wav", "ogg", "oga", "opus", "m4a", "mp4", "aac", "flac", "webm"
+    }
 
     def __init__(self, token: str):
         self.token = token
@@ -212,11 +214,23 @@ class TelegramBot:
                 return "mp3"
             if normalized in {"audio/wav", "audio/x-wav", "audio/wave"}:
                 return "wav"
+            if normalized in {"audio/ogg", "application/ogg"}:
+                return "ogg"
+            if normalized in {"audio/opus", "audio/opus+ogg"}:
+                return "opus"
+            if normalized in {"audio/mp4", "audio/x-m4a", "audio/m4a"}:
+                return "m4a"
+            if normalized in {"audio/aac", "audio/x-aac"}:
+                return "aac"
+            if normalized in {"audio/flac", "audio/x-flac"}:
+                return "flac"
+            if normalized in {"audio/webm"}:
+                return "webm"
 
         return None
 
     async def handle_audio_file_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик аудиофайлов (mp3/wav)"""
+        """Обработчик аудиофайлов"""
         if not self._is_user_allowed(update):
             await self._send_access_denied_message(update)
             return
@@ -250,7 +264,8 @@ class TelegramBot:
 
         detected_ext = self._detect_audio_extension(filename, mime_type)
         if detected_ext is None:
-            await message.reply_text("❌ Поддерживаются только аудиофайлы в форматах mp3 и wav.")
+            supported = ", ".join(sorted(self.SUPPORTED_AUDIO_EXTENSIONS))
+            await message.reply_text(f"❌ Неподдерживаемый аудиоформат. Поддерживаются: {supported}.")
             return
 
         processing_message = await message.reply_text("🎵 Обрабатываю аудиофайл...")
