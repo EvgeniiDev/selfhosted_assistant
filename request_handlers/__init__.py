@@ -8,5 +8,6 @@ __all__ = [
     'BaseRequestHandler',
     'ClassificationHandler', 
     'CalendarEventHandler',
+    'TaskHandler',
     'NoteHandler'
 ]

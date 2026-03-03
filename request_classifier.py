@@ -2,7 +2,9 @@ from typing import Optional, Union
 from datetime import datetime
 from logger import calendar_logger
 from models import CalendarEvent, Note, Task
-from llm_inference import ModelRouter
+from integrations.copilot_sdk import CopilotSDKProvider
+from integrations.openrouter import OpenRouterStandbyProvider
+from llm_core import LLMGateway, LLMRouter
 from request_handlers import (
     ClassificationHandler,
     CalendarEventHandler, 
@@ -12,21 +14,24 @@ from request_handlers import (
 
 class RequestClassifier:
     def __init__(self):
-        self.router = ModelRouter()
+        self.router = LLMRouter()
+        self.gateway = LLMGateway(
+            router=self.router,
+            providers={
+                "copilot": CopilotSDKProvider(),
+                "openrouter": OpenRouterStandbyProvider(),
+            },
+        )
         
-        self.classification_handler = ClassificationHandler(self.router)
-        self.calendar_handler = CalendarEventHandler(self.router)
-        self.note_handler = NoteHandler(self.router)
-        self.task_handler = TaskHandler(self.router)
+        self.classification_handler = ClassificationHandler(self.gateway)
+        self.calendar_handler = CalendarEventHandler(self.gateway)
+        self.note_handler = NoteHandler(self.gateway)
+        self.task_handler = TaskHandler(self.gateway)
         
         calendar_logger.info('RequestClassifier initialized with notes support')
-        
-        status = self.router.get_status()
-        calendar_logger.info(f"Local model available: {status['local_available']}")
-        calendar_logger.info(f"OpenRouter available: {status['openrouter_available']}")
-        calendar_logger.info(f"Configured models: {status['models_count']}")
+        calendar_logger.info(f"Active LLM provider: {self.router.get_active_provider()}")
 
-    def process_request(self, user_message: str) -> Optional[Union[CalendarEvent, Note]]:
+    def process_request(self, user_message: str) -> Optional[Union[CalendarEvent, Note, Task]]:
         current_time = datetime.now()
         current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S (%A)")
         

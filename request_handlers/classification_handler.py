@@ -22,6 +22,9 @@ Respond with ONLY one word: calendar_event, task, note, or unknown
     
     def get_handler_name(self) -> str:
         return "ClassificationHandler"
+
+    def get_task_type(self) -> str:
+        return "classification"
     
     def parse_response(self, response_content: str, **kwargs) -> Optional[str]:
         if not response_content:

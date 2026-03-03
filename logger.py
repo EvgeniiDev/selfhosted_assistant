@@ -80,6 +80,39 @@ class CalendarLogger:
         log_msg = f"ERROR | Type: {type(error).__name__} | Message: {str(error)}{context_str} | Time: {timestamp}"
         # Используем exception, чтобы записать traceback. Вызывать из блока except.
         self.logger.exception(log_msg)
+
+    def log_provider_selection(self, provider: str, model: str, route_reason: str, task_type: str):
+        """Логирование маршрутизации на провайдера/модель."""
+        timestamp = datetime.now().isoformat()
+        log_msg = (
+            f"LLM_ROUTE | Provider: {provider} | Model: {model} | "
+            f"Reason: {route_reason} | TaskType: {task_type} | Time: {timestamp}"
+        )
+        self.logger.info(log_msg)
+
+    def log_fallback(self, from_provider: str, to_provider: str, reason: str):
+        """Логирование fallback между провайдерами."""
+        timestamp = datetime.now().isoformat()
+        log_msg = (
+            f"LLM_FALLBACK | From: {from_provider} | To: {to_provider} | "
+            f"Reason: {reason} | Time: {timestamp}"
+        )
+        self.logger.warning(log_msg)
+
+    def log_policy_decision(self, policy_code: str, allowed: bool, reason: str, details: Dict[str, Any]):
+        """Логирование решений policy-слоя."""
+        timestamp = datetime.now().isoformat()
+        log_msg = (
+            f"LLM_POLICY | Code: {policy_code} | Allowed: {allowed} | "
+            f"Reason: {reason} | Details: {details} | Time: {timestamp}"
+        )
+        self.logger.info(log_msg)
+
+    def log_usage(self, usage: Dict[str, Any], trace: Dict[str, Any]):
+        """Логирование usage/trace данных запроса."""
+        timestamp = datetime.now().isoformat()
+        log_msg = f"LLM_USAGE | Usage: {usage} | Trace: {trace} | Time: {timestamp}"
+        self.logger.info(log_msg)
     
     def info(self, message: str):
         """Общее логирование информационных сообщений"""

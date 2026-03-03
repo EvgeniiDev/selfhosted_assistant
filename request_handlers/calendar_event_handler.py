@@ -43,6 +43,9 @@ For dates without year, assume current year or next occurrence if date has passe
     
     def get_handler_name(self) -> str:
         return "CalendarEventHandler"
+
+    def get_task_type(self) -> str:
+        return "calendar_event"
     
     def parse_response(self, response_content: str, **kwargs) -> Optional[CalendarEvent]:
         parsed_data = self.extract_json_from_response(response_content)

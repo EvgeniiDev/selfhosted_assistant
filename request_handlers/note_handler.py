@@ -52,6 +52,9 @@ class NoteHandler(BaseRequestHandler):
     
     def get_handler_name(self) -> str:
         return "NoteHandler"
+
+    def get_task_type(self) -> str:
+        return "note"
     
     def parse_response(self, response_content: str, **kwargs) -> Optional[Note]:
         parsed_data = self.extract_json_from_response(response_content)

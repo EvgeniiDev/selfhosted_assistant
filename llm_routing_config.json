@@ -1,0 +1,36 @@
+{
+  "active_provider": "copilot",
+  "standby_provider": "openrouter",
+  "providers": {
+    "copilot": {
+      "enabled": true,
+      "default_model": "gpt-4.1",
+      "models": [
+        {
+          "model_id": "gpt-4.1",
+          "task_types": ["calendar_event", "task", "note", "unknown", "classification"],
+          "priority": 1
+        }
+      ]
+    },
+    "openrouter": {
+      "enabled": true,
+      "default_model": "qwen/qwen3-vl-30b-a3b-thinking",
+      "models": [
+        {
+          "model_id": "qwen/qwen3-vl-30b-a3b-thinking",
+          "task_types": ["calendar_event", "task", "note", "unknown", "classification"],
+          "priority": 1
+        }
+      ]
+    }
+  },
+  "policies": {
+    "text_only": true,
+    "allow_mcp_tools": true,
+    "allowed_mcp_servers": [
+      "web-search",
+      "docs-fetch"
+    ]
+  }
+}

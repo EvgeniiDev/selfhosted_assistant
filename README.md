@@ -1,180 +1,144 @@
-# Self-Hosted Telegram Assistant (Google Calendar + Tasks + Notes + Voice)
+# Self-Hosted Telegram Assistant (Calendar + Tasks + Notes + Voice)
 
-Ассистент для Telegram, который понимает естественный язык и умеет:
+Telegram-ассистент, который:
 
-- создавать события в Google Calendar (с подтверждением),
-- создавать задачи в Google Tasks,
-- сохранять заметки,
-- обрабатывать голосовые сообщения и аудиофайлы (mp3/wav/ogg/opus/m4a/mp4/aac/flac/webm) через GigaAM.
+- классифицирует входящие запросы (`calendar_event`, `task`, `note`, `unknown`),
+- создает события в Google Calendar,
+- создает задачи в Google Tasks,
+- сохраняет заметки,
+- распознает голосовые и аудио через GigaAM.
 
-LLM-часть работает через роутер моделей:
+## Архитектура LLM (этап 1 миграции)
 
-- локальная модель (LM Studio) — для приватных запросов,
-- OpenRouter — для публичных запросов (опционально, с fallback по нескольким моделям/провайдерам).
+Реализовано разделение на слои:
 
-## Что сейчас поддерживается
+- `Application`: Telegram flow и бизнес-логика обработчиков.
+- `LLM Core`: `llm_core/contracts.py`, `llm_core/router.py`, `llm_core/gateway.py`, `llm_core/policy.py`.
+- `Integrations`: `integrations/copilot_sdk/provider.py`, `integrations/openrouter/provider.py`.
 
-- Автоклассификация запроса: `calendar_event`, `task`, `note`, `unknown`
-- Подтверждение перед созданием события/задачи в Telegram
-- Создание recurring-событий (RRULE для базовых сценариев)
-- Ограничение доступа к боту через `TELEGRAM_ALLOWED_USERS`
-- Полное логирование запросов/ответов/ошибок в `calendar_assistant.log`
-- Распознавание голосовых и аудиофайлов (`mp3`/`wav`/`ogg`/`opus`/`m4a`/`mp4`/`aac`/`flac`/`webm`) через `gigaam` (без локального вендоринга исходников)
+Текущее поведение:
 
-## Главные зависимости
-
-Основные пакеты из `requirements.txt`:
-
-- `python-telegram-bot==22.3` — Telegram Bot API
-- `google-api-python-client`, `google-auth-httplib2`, `google-auth-oauthlib` — Google Calendar/Tasks API + OAuth
-- `pydantic==2.11.7` — модели данных (`CalendarEvent`, `Task`, `Note`)
-- `python-dateutil` — разбор дат/времени из LLM-ответов
-- `requests` — HTTP-клиент для LM Studio/OpenRouter
-- `python-dotenv` — загрузка `.env`
-- `ffmpeg-python`, `pydub` — аудио-пайплайн
-- `gigaam[longform]` (из GitHub) — ASR для голосовых сообщений
-
-Важно:
-
-- Для голоса нужен установленный `ffmpeg` в системе.
-- Зависимости `torch/torchaudio` подтягиваются через `gigaam[longform]`.
+- активный провайдер задается в `llm_routing_config.json` (`copilot` по умолчанию),
+- `openrouter` подключен как standby,
+- pipeline обработчиков идет через `LLMGateway`,
+- policy-layer применяет `text_only` и whitelist для MCP,
+- в логах фиксируются route/fallback/policy/usage.
 
 ## Быстрый старт
-
-### 1) Подготовка окружения
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### 2) Настройка Telegram
-
-1. Создайте бота через `@BotFather`
-2. Получите `TELEGRAM_BOT_TOKEN`
-
-### 3) Настройка Google API
-
-1. В Google Cloud включите **Google Calendar API** и **Google Tasks API**
-2. Создайте OAuth Client ID (Desktop)
-3. Положите `credentials.json` в корень проекта (или укажите путь через `GOOGLE_CREDENTIALS_PATH`)
-4. При первом запуске произойдет OAuth-авторизация и в консоли будет показан `GOOGLE_OAUTH_TOKEN_V2` (и legacy `GOOGLE_OAUTH_TOKEN`)
-
-### 4) Настройка LLM
-
-#### Локальная модель (рекомендуется)
-
-1. Установите [LM Studio](https://lmstudio.ai/)
-2. Запустите Local Server на `http://127.0.0.1:1234`
-3. Загрузите инструкционную модель (например, Qwen/Gemma/Mistral)
-
-#### OpenRouter (опционально)
-
-Укажите `OPEN_ROUTER_API_KEY`, если хотите использовать облачную модель для публичных запросов.
-
-### 5) Переменные окружения
-
-Рекомендуется хранить их в `.env` (его читает `python-dotenv` при запуске бота).
-
-Минимально необходимые:
-
-- `TELEGRAM_BOT_TOKEN`
-- `GOOGLE_CREDENTIALS_PATH` (или `credentials.json` в корне)
-- `GOOGLE_OAUTH_TOKEN_V2` (после первой авторизации)
-
-Полный список используемых переменных:
-
-- `TELEGRAM_BOT_TOKEN` — токен Telegram-бота
-- `TELEGRAM_ALLOWED_USERS` — whitelist пользователей (`username`/`id` через запятую)
-- `GOOGLE_CREDENTIALS_PATH` — путь к OAuth credentials
-- `GOOGLE_OAUTH_TOKEN_V2` — основной OAuth token v2 (JSON с `client_id`, `client_secret`, `refresh_token`, `token_uri`)
-- `GOOGLE_OAUTH_TOKEN` — JSON-строка токена OAuth
-- `GOOGLE_OAUTH_CLIENT_CONFIG` — OAuth client config JSON (альтернатива `credentials.json` для интерактивной авторизации)
-- `GOOGLE_TASKLIST_ID` — id списка задач (иначе используется `@default`)
-- `TIMEZONE` — часовой пояс для событий/задач (по умолчанию `Europe/Moscow`)
-- `OPEN_ROUTER_API_KEY` — ключ OpenRouter
-- `GIGAAM_MODEL_NAME` — модель ASR (по умолчанию `v3_e2e_rnnt`)
-- `HF_TOKEN` — Hugging Face токен. Нужен для первичной загрузки `pyannote/segmentation-3.0` для `transcribe_longform` (длинные аудио)
-
-Примечание: файл `.env.example` содержит также исторические поля (`MODEL_PATH`, `DEFAULT_TIMEZONE`), которые текущим кодом напрямую не используются.
-
-### OAuth только через переменные окружения
-
-Можно работать без `credentials.json` на сервере:
-
-- В runtime достаточно `GOOGLE_OAUTH_TOKEN_V2` (предпочтительно).
-- Для одноразового получения/обновления токена можно задать `GOOGLE_OAUTH_CLIENT_CONFIG` (JSON OAuth client) и пройти интерактивную авторизацию.
-- После получения токена сохраните только `GOOGLE_OAUTH_TOKEN_V2` в `main.env`.
-- В non-interactive окружении (например, `systemd`) интерактивный OAuth отключен: сервис не запрашивает код в консоли и требует заранее заданный `GOOGLE_OAUTH_TOKEN_V2`.
-
-## Запуск
-
-```bash
 python main.py
 ```
 
-## Примеры запросов
+## Переменные окружения
 
-### События календаря
+Обязательные:
 
-- `Встреча с командой завтра в 14:00 на час`
-- `Планерка каждый понедельник в 10:00`
-- `Стоматолог 15 августа в 16:30, описание: профилактический осмотр`
+- `TELEGRAM_BOT_TOKEN`
+- `GOOGLE_OAUTH_TOKEN_V2` (или интерактивная первичная OAuth-настройка)
 
-### Задачи
+Google/бот:
 
-- `Напомни завтра в 17:00 позвонить в банк`
-- `Сделать отчёт до пятницы`
+- `TELEGRAM_ALLOWED_USERS`
+- `GOOGLE_CREDENTIALS_PATH`
+- `GOOGLE_OAUTH_TOKEN`
+- `GOOGLE_OAUTH_CLIENT_CONFIG`
+- `GOOGLE_TASKLIST_ID`
+- `TIMEZONE`
 
-### Заметки
+LLM:
 
-- `Запомни: купить молоко и хлеб`
-- `Идея: сделать отдельный workflow для ретроспектив`
+- `COPILOT_MODEL` (опционально, модель по умолчанию для Copilot SDK; default `gpt-4.1`)
+- `OPEN_ROUTER_API_KEY` (для standby/fallback)
 
-## Работа с голосовыми
+Copilot SDK auth (recommended):
 
-- Бот принимает Telegram voice (`.ogg`)
-- Бот принимает аудиофайлы `mp3`, `wav`, `ogg`, `opus`, `m4a`, `mp4`, `aac`, `flac`, `webm` (через `Audio`/`Document`)
-- Аудио конвертируется в 16kHz mono
-- Для коротких сообщений используется `transcribe`, для длинных — `transcribe_longform`
-- При пустой транскрипции создаются debug-артефакты в `debug_audio/`
+1. Выполнить `gh auth login -h github.com -w`
+2. Проверить `gh auth status -h github.com`
+3. Токен из `gh auth` используется SDK напрямую (PAT `github_pat_*` для этого потока не нужен)
 
-## Логирование
+Voice:
 
-- Лог-файл: `calendar_assistant.log`
-- Логируются пользовательские запросы, промпты/ответы LLM, вызовы Google API, ошибки
+- `GIGAAM_MODEL_NAME`
+- `HF_TOKEN` (для некоторых longform сценариев)
 
-## Полезные скрипты
+## Конфигурация роутинга и policy
 
-- `scripts/list_tasklists.py` — вывести доступные tasklist id/title
-- `scripts/transcribe_mp4_chunks.py` — утилита оффлайн-транскриба MP4 по чанкам
+Файл: `llm_routing_config.json`
 
-## Структура проекта
+- `active_provider`: основной провайдер (`copilot`)
+- `standby_provider`: fallback провайдер (`openrouter`)
+- `providers`: модельные профили и task-type маршрутизация
+- `policies.text_only`: включает guardrails против write/shell действий
+- `policies.allow_mcp_tools`: разрешение MCP-инструментов
+- `policies.allowed_mcp_servers`: whitelist MCP серверов
+
+## Логирование и наблюдаемость
+
+Лог-файл: `calendar_assistant.log`
+
+Новые маркеры:
+
+- `LLM_ROUTE` (provider/model/reason/task_type)
+- `LLM_FALLBACK` (from/to/reason)
+- `LLM_POLICY` (policy decision)
+- `LLM_USAGE` (usage/trace, включая latency)
+
+## Smoke-проверки
+
+Провайдер Copilot:
+
+```bash
+.venv\Scripts\python.exe scripts\smoke_copilot_provider.py --prompt "Reply with smoke-ok"
+```
+
+Gateway routing/fallback без сети:
+
+```bash
+.venv\Scripts\python.exe scripts\smoke_gateway_flow.py
+```
+
+Policy guardrails (positive/negative):
+
+```bash
+.venv\Scripts\python.exe scripts\smoke_policy_guardrails.py
+```
+
+## Rollout / rollback
+
+Rollout:
+
+1. Прогнать smoke-скрипты.
+2. Прогнать ручные сценарии для `calendar_event`, `task`, `note`, `unknown`.
+3. Проверить логи `LLM_ROUTE/LLM_POLICY/LLM_USAGE`.
+4. Включить ограниченный prod-трафик.
+5. После стабилизации перевести весь трафик.
+
+Rollback:
+
+1. В `llm_routing_config.json` переключить `active_provider` на `openrouter`.
+2. Перезапустить сервис.
+3. Проверить `LLM_ROUTE` и успешность контрольных сценариев.
+
+## Структура проекта (актуальные LLM модули)
 
 ```text
 selfhosted_assistant/
-├── main.py
-├── telegram_bot.py
-├── assistant_service.py
-├── request_classifier.py
-├── google_calendar_client.py
-├── voice_service.py
-├── models.py
-├── logger.py
-├── model_config.json
-├── llm_inference/
-│   ├── model_router.py
-│   ├── local_provider.py
-│   ├── openrouter_provider.py
-│   └── privacy_detector.py
+├── llm_core/
+│   ├── contracts.py
+│   ├── gateway.py
+│   ├── router.py
+│   └── policy.py
+├── integrations/
+│   ├── copilot_sdk/
+│   │   └── provider.py
+│   └── openrouter/
+│       └── provider.py
 ├── request_handlers/
-│   ├── classification_handler.py
-│   ├── calendar_event_handler.py
-│   ├── task_handler.py
-│   └── note_handler.py
-├── scripts/
-│   ├── list_tasklists.py
-│   └── transcribe_mp4_chunks.py
+├── request_classifier.py
+├── llm_routing_config.json
 └── requirements.txt
 ```

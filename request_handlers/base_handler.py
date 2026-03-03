@@ -6,20 +6,20 @@ import json
 from abc import ABC, abstractmethod
 from typing import Optional, Any
 from logger import calendar_logger
-from llm_inference import ModelRouter
+from llm_core import LLMGateway, LLMRequest
 
 
 class BaseRequestHandler(ABC):
     """Базовый класс для всех обработчиков запросов"""
     
-    def __init__(self, router: ModelRouter):
+    def __init__(self, gateway: LLMGateway):
         """
         Инициализация обработчика
         
         Args:
-            router: Роутер для работы с LLM моделями
+            gateway: LLM gateway для работы с провайдерами
         """
-        self.router = router
+        self.gateway = gateway
     
     @abstractmethod
     def get_prompt(self) -> str:
@@ -29,6 +29,11 @@ class BaseRequestHandler(ABC):
     @abstractmethod
     def get_handler_name(self) -> str:
         """Возвращает имя обработчика для логирования"""
+        pass
+
+    @abstractmethod
+    def get_task_type(self) -> str:
+        """Возвращает task_type для LLM core маршрутизации"""
         pass
     
     @abstractmethod
@@ -58,11 +63,14 @@ class BaseRequestHandler(ABC):
         """
         try:
             # Генерируем ответ от модели
-            content = self.router.generate(
-                enhanced_message, 
-                self.get_prompt(), 
-                is_private=is_private
+            request = LLMRequest(
+                content=enhanced_message,
+                task_type=self.get_task_type(),
+                system_prompt=self.get_prompt(),
+                metadata={"is_private": is_private, "handler": self.get_handler_name()},
             )
+            response = self.gateway.generate(request)
+            content = response.content
             
             if not content:
                 calendar_logger.warning(f"{self.get_handler_name()}: Empty response from model")
