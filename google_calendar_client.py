@@ -45,10 +45,17 @@ class GoogleCalendarClient:
         """Authenticate and return dict with 'calendar' and 'tasks' services."""
         creds = self._load_credentials_from_env()
         if creds:
-            if creds.expired and creds.refresh_token:
-                print("🔄 Обновляем истекший токен...")
-                creds.refresh(Request())
-                print("✅ Токен обновлен в памяти")
+            needs_refresh = bool(creds.refresh_token) and (
+                not creds.valid or creds.expired or not getattr(creds, 'token', None)
+            )
+
+            if needs_refresh:
+                try:
+                    print("🔄 Обновляем OAuth токен из refresh_token...")
+                    creds.refresh(Request())
+                    print("✅ Токен обновлен в памяти")
+                except Exception as refresh_err:
+                    calendar_logger.warning(f"Failed to refresh Google token from environment: {refresh_err}")
 
             if creds.valid:
                 calendar_logger.info("Using Google token from environment")

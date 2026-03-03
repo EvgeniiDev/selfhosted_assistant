@@ -1,4 +1,5 @@
 from typing import Optional
+import re
 from logger import calendar_logger
 from .base_handler import BaseRequestHandler
 
@@ -38,8 +39,42 @@ Respond with ONLY one word: calendar_event, task, note, or unknown
     def classify_request(self, user_message: str) -> str:
         try:
             classification = self.process(user_message, True)
-            return classification if classification else "unknown"
+            if classification:
+                return classification
+
+            fallback = self._heuristic_classification(user_message)
+            calendar_logger.warning(f"ClassificationHandler: heuristic fallback used -> {fallback}")
+            return fallback
             
         except Exception as e:
             calendar_logger.log_error(e, f"{self.get_handler_name()}.classify_request")
+            return self._heuristic_classification(user_message)
+
+    def _heuristic_classification(self, user_message: str) -> str:
+        text = (user_message or "").strip().lower()
+        if not text:
             return "unknown"
+
+        task_keywords = (
+            "напомни", "сделать", "сделай", "задача", "todo", "to-do", "дедлайн", "нужно"
+        )
+        calendar_keywords = (
+            "встреч", "созвон", "митинг", "календар", "событи", "appointment", "meeting"
+        )
+
+        has_datetime_hint = bool(
+            re.search(r"\b\d{1,2}:\d{2}\b", text)
+            or re.search(r"\b\d{1,2}\.\d{1,2}(?:\.\d{2,4})?\b", text)
+            or any(word in text for word in (
+                "сегодня", "завтра", "послезавтра", "понедельник", "вторник", "сред", "четверг", "пятниц", "суббот", "воскрес",
+                "январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"
+            ))
+        )
+
+        if any(keyword in text for keyword in task_keywords):
+            return "task"
+
+        if any(keyword in text for keyword in calendar_keywords) and has_datetime_hint:
+            return "calendar_event"
+
+        return "note"

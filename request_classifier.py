@@ -49,7 +49,11 @@ class RequestClassifier:
                 case "task":
                     return self.task_handler.create_task(enhanced_message)
                 case "note":
-                    return self.note_handler.create_note(enhanced_message, current_time)
+                    note = self.note_handler.create_note(enhanced_message, current_time)
+                    if note:
+                        return note
+                    calendar_logger.warning("NoteHandler unavailable; using deterministic note fallback")
+                    return self._build_fallback_note(user_message, current_time)
                 case _:
                     calendar_logger.log_error(
                         Exception(f"Unexpected classification: {classification}"),
@@ -60,3 +64,22 @@ class RequestClassifier:
         except Exception as e:
             calendar_logger.log_error(e, "request_classifier.process_request - General exception")
             return None
+
+    def _build_fallback_note(self, user_message: str, current_time: datetime) -> Note:
+        text = (user_message or "").strip()
+        if not text:
+            text = "Пустая заметка"
+
+        words = text.replace("\n", " ").split()
+        title = " ".join(words[:7]).strip()
+        if len(words) > 7:
+            title = f"{title}..."
+        if not title:
+            title = "Заметка"
+
+        return Note(
+            title=title,
+            content=text,
+            created_at=current_time.strftime("%Y-%m-%dT%H:%M:%S"),
+            tags=None,
+        )

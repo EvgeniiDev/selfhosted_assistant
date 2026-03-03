@@ -1,6 +1,7 @@
 import io
 import torch
 import os
+import warnings
 from typing import Any, Optional
 import time
 import tempfile
@@ -26,7 +27,20 @@ class VoiceService:
         self.device = device
         self.model_name = os.getenv("GIGAAM_MODEL_NAME", "v3_e2e_rnnt")
         self.model = None
+        self._configure_warnings()
         self._load_model()
+
+    def _configure_warnings(self):
+        warnings.filterwarnings(
+            "ignore",
+            message=r"In 2\.9, this function's implementation will be changed to use torchaudio\.(load|save)_with_torchcodec.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"torio\.io\._streaming_media_(decoder|encoder)\.StreamingMedia(Decoder|Encoder) has been deprecated.*",
+            category=UserWarning,
+        )
     
     def _load_model(self):
         """Загружает модель GigaAM для распознавания речи"""

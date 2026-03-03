@@ -32,8 +32,8 @@ class ModelRouter:
             calendar_logger.log_error(e, f"Error loading config {config_path}")
             return {"models": []}
     
-    def _get_best_public_model(self) -> Optional[Dict]:
-        """Получение лучшей публичной модели (бесплатной в приоритете)"""
+    def _get_public_models(self) -> list[Dict]:
+        """Получение списка публичных моделей, отсортированных по приоритету"""
         models = self.config.get("models", [])
         public_models = []
         
@@ -45,12 +45,12 @@ class ModelRouter:
                 public_models.append(model)
         
         if not public_models:
-            return None
+            return []
         
         # Сортируем по приоритету (бесплатные модели имеют приоритет 1)
         public_models.sort(key=lambda x: x.get("priority", 99))
-        
-        return public_models[0]
+
+        return public_models
     
     def _get_local_model(self) -> Optional[Dict]:
         """Получение локальной модели"""
@@ -108,13 +108,16 @@ class ModelRouter:
                 calendar_logger.warning("OpenRouter not available")
                 return None
             
-            model = self._get_best_public_model()
-            if not model:
+            public_models = self._get_public_models()
+            if not public_models:
                 calendar_logger.warning("No public model configured")
                 return None
-            
-            calendar_logger.info(f"Selected public model: {model['name']}")
-            return self.openrouter_provider.generate(messages, model["model_id"])
+
+            model_ids = [model["model_id"] for model in public_models]
+            calendar_logger.info(
+                f"Selected public models (fallback chain): {', '.join(model_ids)}"
+            )
+            return self.openrouter_provider.generate(messages, model_ids=model_ids)
     
     def get_status(self) -> Dict:
         """Получение статуса провайдеров"""

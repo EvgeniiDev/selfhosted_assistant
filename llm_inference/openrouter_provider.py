@@ -19,11 +19,32 @@ class OpenRouterProvider:
         """Проверка доступности OpenRouter"""
         return bool(self.api_key)
     
-    def generate(self, messages: list, model_id: str) -> Optional[str]:
-        """Генерация ответа от OpenRouter модели"""
+    def generate(self, messages: list, model_id: str = None, model_ids: list[str] = None) -> Optional[str]:
+        """Генерация ответа от OpenRouter с fallback по провайдерам и моделям"""
         if not self.api_key:
             calendar_logger.warning("OpenRouter API key not found")
             return None
+
+        if not model_id and not model_ids:
+            calendar_logger.warning("OpenRouter model_id/model_ids not provided")
+            return None
+
+        payload = {
+            "messages": messages,
+            "provider": {
+                "allow_fallbacks": True,
+                "sort": {
+                    "by": "throughput",
+                    "partition": "none"
+                }
+            }
+        }
+
+        if model_ids and len(model_ids) > 1:
+            payload["models"] = model_ids
+            payload["route"] = "fallback"
+        else:
+            payload["model"] = model_id or model_ids[0]
             
         try:
             response = requests.post(
@@ -32,10 +53,7 @@ class OpenRouterProvider:
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
-                json={
-                    "model": model_id,
-                    "messages": messages
-                },
+                json=payload,
                 timeout=120
             )
             
@@ -43,12 +61,14 @@ class OpenRouterProvider:
                 data = response.json()
                 if "choices" in data and len(data["choices"]) > 0:
                     content = data["choices"][0]["message"]["content"].strip()
-                    calendar_logger.info(f"OpenRouter response received: {model_id}")
+                    used_model = data.get("model", model_id or (model_ids[0] if model_ids else "unknown"))
+                    calendar_logger.info(f"OpenRouter response received: {used_model}")
                     return content
             
             calendar_logger.warning(f"OpenRouter failed: {response.status_code} - {response.text}")
             return None
             
         except Exception as e:
-            calendar_logger.log_error(e, f"OpenRouterProvider.generate - {model_id}")
+            model_label = model_id or (", ".join(model_ids) if model_ids else "unknown")
+            calendar_logger.log_error(e, f"OpenRouterProvider.generate - {model_label}")
             return None
