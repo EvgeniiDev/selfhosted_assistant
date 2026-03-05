@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
+from pathlib import Path
 from time import sleep
 from typing import Any, cast
 
@@ -40,6 +42,9 @@ class CopilotSDKProvider:
         self.timeout_seconds = timeout_seconds
         self.retries = retries
         self.model_fallback = os.getenv("COPILOT_MODEL", "gpt-4.1")
+        self.working_directory = str(Path(os.getenv("COPILOT_WORKING_DIRECTORY", Path.cwd())).resolve())
+        self.skill_directories = self._parse_skill_directories(os.getenv("COPILOT_SKILL_DIRS", ".github/skills"))
+        self.disabled_skills = self._parse_csv_list(os.getenv("COPILOT_DISABLED_SKILLS", ""))
 
     def is_available(self) -> bool:
         try:
@@ -93,13 +98,9 @@ class CopilotSDKProvider:
                 )
 
             selected_model = model_id or self.model_fallback
+            session_config = self._build_session_config(selected_model, request)
             session = await client.create_session(
-                SessionConfig(
-                    model=selected_model,
-                    client_name="selfhosted_assistant",
-                    streaming=False,
-                    on_permission_request=self._approve_all_permissions,
-                )
+                session_config
             )
 
             event = await session.send_and_wait(
@@ -124,6 +125,7 @@ class CopilotSDKProvider:
                 raw_meta={
                     "event_type": str(getattr(event, "type", "")) if event else "",
                     "login": getattr(auth, "login", ""),
+                    "session_id": str(getattr(session, "id", "")),
                 },
             )
         finally:
@@ -170,3 +172,56 @@ class CopilotSDKProvider:
         messages.append({"role": "user", "content": request.content})
         calendar_logger.log_llm_prompt(request.content, request.system_prompt)
         return messages
+
+    def _build_session_config(self, model_id: str, request: LLMRequest) -> SessionConfig:
+        kwargs: dict[str, Any] = {
+            "model": model_id,
+            "client_name": "selfhosted_assistant",
+            "streaming": False,
+            "on_permission_request": self._approve_all_permissions,
+        }
+
+        # SDK versions may expose different SessionConfig fields.
+        supported = self._get_session_config_supported_fields()
+
+        requested_session_id = str(request.metadata.get("copilot_session_id", "")).strip()
+        if "session_id" in supported and requested_session_id:
+            kwargs["session_id"] = requested_session_id
+
+        if "working_directory" in supported and self.working_directory:
+            kwargs["working_directory"] = self.working_directory
+        if "skill_directories" in supported and self.skill_directories:
+            kwargs["skill_directories"] = self.skill_directories
+        if "disabled_skills" in supported and self.disabled_skills:
+            kwargs["disabled_skills"] = self.disabled_skills
+
+        if "skill_directories" not in supported and self.skill_directories:
+            calendar_logger.warning(
+                "SessionConfig does not support 'skill_directories' in this SDK version."
+            )
+        if "disabled_skills" not in supported and self.disabled_skills:
+            calendar_logger.warning(
+                "SessionConfig does not support 'disabled_skills' in this SDK version."
+            )
+
+        return SessionConfig(**kwargs)
+
+    def _get_session_config_supported_fields(self) -> set[str]:
+        annotations = getattr(SessionConfig, "__annotations__", None)
+        if isinstance(annotations, dict) and annotations:
+            return {str(key) for key in annotations.keys()}
+
+        try:
+            return set(inspect.signature(SessionConfig).parameters.keys())
+        except (TypeError, ValueError):
+            return set()
+
+    def _parse_skill_directories(self, raw_value: str) -> list[str]:
+        dirs = [part.strip() for part in (raw_value or "").split(";") if part.strip()]
+        resolved: list[str] = []
+        for item in dirs:
+            resolved.append(str(Path(item).resolve()))
+        return resolved
+
+    def _parse_csv_list(self, raw_value: str) -> list[str]:
+        return [part.strip() for part in (raw_value or "").split(",") if part.strip()]

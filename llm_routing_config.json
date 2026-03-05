@@ -8,7 +8,7 @@
       "models": [
         {
           "model_id": "gpt-4.1",
-          "task_types": ["calendar_event", "task", "note", "unknown", "classification"],
+          "task_types": ["calendar_event", "task", "note", "research", "unknown", "classification"],
           "priority": 1
         }
       ]
@@ -19,7 +19,7 @@
       "models": [
         {
           "model_id": "qwen/qwen3-vl-30b-a3b-thinking",
-          "task_types": ["calendar_event", "task", "note", "unknown", "classification"],
+          "task_types": ["calendar_event", "task", "note", "research", "unknown", "classification"],
           "priority": 1
         }
       ]
@@ -29,6 +29,7 @@
     "text_only": true,
     "allow_mcp_tools": true,
     "allowed_mcp_servers": [
+      "tavily",
       "web-search",
       "docs-fetch"
     ]

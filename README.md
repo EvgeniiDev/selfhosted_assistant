@@ -52,7 +52,14 @@ Google/бот:
 LLM:
 
 - `COPILOT_MODEL` (опционально, модель по умолчанию для Copilot SDK; default `gpt-4.1`)
+- `COPILOT_SKILL_DIRS` (опционально; список директорий skills через `;`, default `.github/skills`)
+- `COPILOT_DISABLED_SKILLS` (опционально; список skill id через `,`)
+- `COPILOT_WORKING_DIRECTORY` (опционально; рабочая директория сессии Copilot)
 - `OPEN_ROUTER_API_KEY` (для standby/fallback)
+
+Research mode:
+
+- `RESEARCH_CONTEXT_DIR` (опционально; директория кэша research-сессий, по умолчанию `%TEMP%/selfhosted_assistant/research`)
 
 Copilot SDK auth (recommended):
 
@@ -106,6 +113,45 @@ Policy guardrails (positive/negative):
 ```bash
 .venv\Scripts\python.exe scripts\smoke_policy_guardrails.py
 ```
+
+Research skill smoke:
+
+```bash
+.venv\Scripts\python.exe scripts\smoke_research_skill.py --prompt "Исследуй тему retrieval augmented generation"
+```
+
+## Research Mode
+
+Поддерживается отдельный intent `research` с использованием skills Copilot runtime (например, `research-pipeline`).
+
+Пользовательский сценарий в Telegram:
+
+- Новый запрос: `Исследуй тему ...`
+- Follow-up: `подробнее`, `раскрой пункт 2`, `уточни выводы`
+- Команды:
+- `/research_help` - примеры и формат
+- `/research_sources` - источники из текущего research-контекста
+- `/research_reset` - сброс active research-контекста чата
+
+Поведение:
+
+- первый ответ возвращается в компактном формате,
+- факты помечаются `[CONFIRMED]`, `[UNCERTAIN]`, `[NOT_FOUND]`,
+- источники (URL) сохраняются в локальный кэш,
+- follow-up запросы используют сохраненный контекст и дозапрашивают только недостающие данные.
+
+Локальный кэш research:
+
+- по умолчанию: `%TEMP%/selfhosted_assistant/research/<chat_id>/session-*/`
+- артефакты: `meta.json`, `brief.md`, `findings.json`, `sources.json`, `turns/*`
+- автоматически применяется TTL cleanup и ограничение числа сессий на чат.
+
+Troubleshooting:
+
+- Если research не запускается: проверьте `gh auth login -h github.com -w` и `gh auth status -h github.com`.
+- Если skill не подхватывается: проверьте `COPILOT_SKILL_DIRS` и наличие `SKILL.md` в директории.
+- Если MCP/tools недоступны: ответ может быть частичным, с `UNCERTAIN/NOT_FOUND`.
+- Если ошибка записи кэша: бот продолжит отвечать, но без устойчивого follow-up контекста.
 
 ## Rollout / rollback
 

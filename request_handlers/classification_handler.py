@@ -12,9 +12,10 @@ class ClassificationHandler(BaseRequestHandler):
 - **calendar_event**: mentions specific time, date, meetings, appointments, reminders with time constraints
 - **note**: general information to remember, ideas, thoughts, lists, anything without specific time
 - **task**: short task/reminder that the user wants to schedule or be reminded about (could have due date/time)
+- **research**: user asks to investigate a topic, gather facts, compare sources, or perform a deep dive
 - **unknown**: unclear or ambiguous requests
 
-Respond with ONLY one word: calendar_event, task, note, or unknown
+Respond with ONLY one word: calendar_event, task, note, research, or unknown
 """
     
     def get_prompt(self) -> str:
@@ -31,22 +32,27 @@ Respond with ONLY one word: calendar_event, task, note, or unknown
             return None
         
         classification = response_content.strip().lower()
-        valid_types = {"calendar_event", "note", "task", "unknown"}
+        valid_types = {"calendar_event", "note", "task", "research", "unknown"}
         if classification in valid_types:
             calendar_logger.info(f"Request classified as: {classification}")
             return classification
         else:
             calendar_logger.warning(f"Invalid classification received: {classification}")
-            return "unknown"
+            return None
     
     def classify_request(self, user_message: str) -> str:
         try:
             classification = self.process(user_message, True)
-            if classification:
+            if classification and classification != "unknown":
                 return classification
 
             fallback = self._heuristic_classification(user_message)
-            calendar_logger.warning(f"ClassificationHandler: heuristic fallback used -> {fallback}")
+            if classification == "unknown":
+                calendar_logger.warning(
+                    f"ClassificationHandler: model returned 'unknown', heuristic override -> {fallback}"
+                )
+            else:
+                calendar_logger.warning(f"ClassificationHandler: heuristic fallback used -> {fallback}")
             return fallback
             
         except Exception as e:
@@ -61,6 +67,20 @@ Respond with ONLY one word: calendar_event, task, note, or unknown
         task_keywords = (
             "напомни", "сделать", "сделай", "задача", "todo", "to-do", "дедлайн", "нужно"
         )
+        research_keywords = (
+            "исследуй",
+            "найди информацию",
+            "проведи исследование",
+            "deep dive",
+            "investigate",
+            "research",
+            "подробнее",
+            "раскрой",
+            "уточни",
+            "пункт",
+            "follow-up",
+            "follow up",
+        )
         calendar_keywords = (
             "встреч", "созвон", "митинг", "календар", "событи", "appointment", "meeting"
         )
@@ -73,6 +93,9 @@ Respond with ONLY one word: calendar_event, task, note, or unknown
                 "январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"
             ))
         )
+
+        if any(keyword in text for keyword in research_keywords):
+            return "research"
 
         if any(keyword in text for keyword in task_keywords):
             return "task"

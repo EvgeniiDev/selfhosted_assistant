@@ -1,7 +1,7 @@
 from typing import Optional, Union
 from datetime import datetime
 from logger import calendar_logger
-from models import CalendarEvent, Note, Task
+from models import CalendarEvent, Note, Task, ResearchRequest
 from integrations.copilot_sdk import CopilotSDKProvider
 from integrations.openrouter import OpenRouterStandbyProvider
 from llm_core import LLMGateway, LLMRouter
@@ -31,7 +31,7 @@ class RequestClassifier:
         calendar_logger.info('RequestClassifier initialized with notes support')
         calendar_logger.info(f"Active LLM provider: {self.router.get_active_provider()}")
 
-    def process_request(self, user_message: str) -> Optional[Union[CalendarEvent, Note, Task]]:
+    def process_request(self, user_message: str) -> Optional[Union[CalendarEvent, Note, Task, ResearchRequest]]:
         current_time = datetime.now()
         current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S (%A)")
         
@@ -59,6 +59,8 @@ class RequestClassifier:
                         return note
                     calendar_logger.warning("NoteHandler unavailable; using deterministic note fallback")
                     return self._build_fallback_note(user_message, current_time)
+                case "research":
+                    return ResearchRequest(original_query=user_message)
                 case _:
                     calendar_logger.log_error(
                         Exception(f"Unexpected classification: {classification}"),

@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, Literal
 from datetime import datetime
 from pydantic import BaseModel, validator, Field
 from dateutil.parser import parse as parse_date
@@ -182,4 +182,11 @@ class Task(BaseModel):
                 payload['due'] = self.due_time.isoformat()
 
         return payload
+
+
+class ResearchRequest(BaseModel):
+    """Lightweight payload for research-mode routing."""
+
+    original_query: str
+    mode_hint: Optional[Literal["new", "followup"]] = None
 

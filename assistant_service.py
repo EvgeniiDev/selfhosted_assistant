@@ -3,7 +3,7 @@ from datetime import datetime
 
 from request_classifier import RequestClassifier
 from google_calendar_client import GoogleCalendarClient
-from models import CalendarEvent, Note, Task
+from models import CalendarEvent, Note, Task, ResearchRequest
 from logger import calendar_logger
 
 
@@ -57,6 +57,14 @@ class AssistantService:
                         'action': 'confirm_task',
                         'task': result,
                         'message': self._format_task_confirmation(result)
+                    }
+                case ResearchRequest():
+                    mode = self._detect_research_mode(result.original_query)
+                    return {
+                        'success': True,
+                        'action': 'research',
+                        'original_query': result.original_query,
+                        'mode': mode,
                     }
                 
                 case _:
@@ -212,3 +220,19 @@ class AssistantService:
             msg += f"\n📋 {task.description}"
         msg += "\n\n✅ Создать задачу?"
         return msg
+
+    def _detect_research_mode(self, user_message: str) -> str:
+        text = (user_message or "").lower()
+        followup_hints = (
+            "подробнее",
+            "раскрой",
+            "уточни",
+            "детальнее",
+            "детальней",
+            "пункт",
+            "follow-up",
+            "follow up",
+            "more details",
+            "elaborate",
+        )
+        return "followup" if any(hint in text for hint in followup_hints) else "new"
