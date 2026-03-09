@@ -4,10 +4,10 @@
   "providers": {
     "copilot": {
       "enabled": true,
-      "default_model": "gpt-4.1",
+      "default_model": "gpt-5.4",
       "models": [
         {
-          "model_id": "gpt-4.1",
+          "model_id": "gpt-5.4",
           "task_types": ["calendar_event", "task", "note", "research", "unknown", "classification"],
           "priority": 1
         }
