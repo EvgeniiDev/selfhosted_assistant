@@ -29,7 +29,7 @@ class ResearchContextStore:
         self,
         base_dir: str | None = None,
         ttl_hours: int = 24,
-        max_sessions_per_chat: int = 3,
+        max_sessions_per_chat: int = 4,
     ) -> None:
         root = base_dir or os.getenv("RESEARCH_CONTEXT_DIR")
         if not root:
@@ -122,6 +122,19 @@ class ResearchContextStore:
         return generated
 
     def reset_chat(self, chat_id: str) -> bool:
+        """Reset only the active session, not the whole chat directory."""
+        session_dir = self._find_active_session(chat_id)
+        if not session_dir:
+            return False
+        shutil.rmtree(session_dir, ignore_errors=True)
+        # Clear active_session_id so next call picks a remaining session or creates new
+        state = self._read_chat_state(chat_id)
+        state.pop("active_session_id", None)
+        self._write_chat_state(chat_id, state)
+        return True
+
+    def reset_all_sessions(self, chat_id: str) -> bool:
+        """Remove the entire chat directory with all sessions."""
         chat_dir = self.base_dir / str(chat_id)
         if not chat_dir.exists():
             return False
@@ -147,6 +160,9 @@ class ResearchContextStore:
         if not text:
             return False
 
+        if "[confirmed]" in text or "[cancelled]" in text:
+            return False
+
         clarification_hints = (
             "уточните",
             "уточни",
@@ -154,9 +170,27 @@ class ResearchContextStore:
             "please clarify",
             "ответьте на эти вопросы",
             "нужны уточнения",
+            "?",
         )
-        has_hint = any(hint in text for hint in clarification_hints)
-        return has_hint and "[confirmed]" not in text
+        return any(hint in text for hint in clarification_hints)
+
+    def cancel_clarification(self, chat_id: str) -> bool:
+        """Mark the current clarification as cancelled so input is no longer captured."""
+        session = self._find_active_session(chat_id)
+        if not session:
+            return False
+        turns_dir = session / "turns"
+        if not turns_dir.exists():
+            return False
+        assistant_turns = sorted(turns_dir.glob("*_assistant.md"))
+        if not assistant_turns:
+            return False
+        last = assistant_turns[-1]
+        content = self._safe_read_text(last)
+        if not content or "[cancelled]" in content.lower():
+            return False
+        last.write_text(content + "\n[cancelled]", encoding="utf-8")
+        return True
 
     def list_sources(self, chat_id: str) -> list[str]:
         ctx = self.get_active_context(chat_id)
@@ -221,15 +255,68 @@ class ResearchContextStore:
         self.cleanup_expired()
         return session_dir
 
-    def _find_latest_session(self, chat_id: str) -> Path | None:
+    def list_sessions(self, chat_id: str) -> list[ResearchSessionRef]:
+        """Return all sessions for a chat, oldest first."""
+        chat_dir = self.base_dir / str(chat_id)
+        if not chat_dir.exists() or not chat_dir.is_dir():
+            return []
+        sessions = sorted([d for d in chat_dir.iterdir() if d.is_dir()], key=lambda p: p.name)
+        refs: list[ResearchSessionRef] = []
+        for s in sessions:
+            meta = self._read_json(s / "meta.json", {})
+            refs.append(ResearchSessionRef(
+                chat_id=str(chat_id),
+                session_id=str(meta.get("session_id", s.name)),
+                session_dir=s,
+            ))
+        return refs
+
+    def get_active_session_id(self, chat_id: str) -> str | None:
+        state = self._read_chat_state(chat_id)
+        return state.get("active_session_id")
+
+    def set_active_session_id(self, chat_id: str, session_id: str) -> bool:
+        """Switch the active session. Returns False if session doesn't exist."""
+        sessions = self.list_sessions(chat_id)
+        if not any(s.session_id == session_id for s in sessions):
+            return False
+        state = self._read_chat_state(chat_id)
+        state["active_session_id"] = session_id
+        self._write_chat_state(chat_id, state)
+        return True
+
+    def _find_active_session(self, chat_id: str) -> Path | None:
+        """Return the explicitly-selected active session, falling back to the latest."""
         chat_dir = self.base_dir / str(chat_id)
         if not chat_dir.exists() or not chat_dir.is_dir():
             return None
 
-        sessions = sorted([item for item in chat_dir.iterdir() if item.is_dir()], key=lambda p: p.name)
+        sessions = sorted([d for d in chat_dir.iterdir() if d.is_dir()], key=lambda p: p.name)
         if not sessions:
             return None
+
+        active_id = self.get_active_session_id(chat_id)
+        if active_id:
+            for s in sessions:
+                meta = self._read_json(s / "meta.json", {})
+                if meta.get("session_id") == active_id:
+                    return s
+
         return sessions[-1]
+
+    def _find_latest_session(self, chat_id: str) -> Path | None:
+        return self._find_active_session(chat_id)
+
+    def _read_chat_state(self, chat_id: str) -> dict:
+        chat_dir = self.base_dir / str(chat_id)
+        return self._read_json(chat_dir / "chat_state.json", {})
+
+    def _write_chat_state(self, chat_id: str, state: dict) -> None:
+        chat_dir = self.base_dir / str(chat_id)
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        (chat_dir / "chat_state.json").write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     def _next_turn_index(self, session_dir: Path) -> int:
         turns_dir = session_dir / "turns"

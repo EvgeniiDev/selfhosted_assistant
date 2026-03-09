@@ -27,6 +27,7 @@ NON_TELEGRAM_TESTS = [
     "tests.test_chat_application_service",
     "tests.test_voice_input_service",
     "tests.test_non_telegram_session_scenarios",
+    "tests.test_session_routing",
 ]
 
 REAL_COPILOT_TESTS = [

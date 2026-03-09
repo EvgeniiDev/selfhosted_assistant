@@ -115,6 +115,39 @@ class ResearchServiceTests(unittest.TestCase):
 
             self.assertTrue(service.should_followup("chat-1", "Меня интересует горизонт в 5 лет"))
 
+    def test_clarification_pending_captures_arbitrary_text_as_followup(self):
+        """Core bug regression: arbitrary text MUST route as follow-up
+        when a clarification question is pending, even without ANY marker keywords."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ResearchContextStore(base_dir=temp_dir)
+            store.save_turn("chat-1", "Исследуй тему", "Пожалуйста, уточните горизонт исследования")
+            service = ResearchService(gateway=FakeGateway(["ok"]), context_store=store)
+
+            self.assertTrue(service.should_followup("chat-1", "да"))
+            self.assertTrue(service.should_followup("chat-1", "расскажи про медицину"))
+            self.assertTrue(service.should_followup("chat-1", "17"))
+            self.assertTrue(service.should_followup("chat-1", "всё что найдёшь"))
+
+    def test_no_clarification_pending_arbitrary_text_is_not_followup(self):
+        """Without a pending clarification, arbitrary text should NOT be treated as follow-up."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ResearchContextStore(base_dir=temp_dir)
+            store.save_turn("chat-1", "Исследуй тему", "Вот результаты исследования:\n[CONFIRMED] факт 1")
+            service = ResearchService(gateway=FakeGateway(["ok"]), context_store=store)
+
+            self.assertFalse(service.should_followup("chat-1", "да"))
+            self.assertFalse(service.should_followup("chat-1", "расскажи про медицину"))
+
+    def test_cancel_clarification_stops_input_capture(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ResearchContextStore(base_dir=temp_dir)
+            store.save_turn("chat-1", "Исследуй тему", "Пожалуйста, уточните горизонт")
+            service = ResearchService(gateway=FakeGateway(["ok"]), context_store=store)
+
+            self.assertTrue(service.should_followup("chat-1", "любой текст"))
+            service.cancel_clarification("chat-1")
+            self.assertFalse(service.should_followup("chat-1", "любой текст"))
+
 
 if __name__ == "__main__":
     unittest.main()

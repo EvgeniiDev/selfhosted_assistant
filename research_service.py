@@ -52,10 +52,13 @@ class ResearchService:
         if self._is_research_followup(user_text):
             return True
 
-        if self.context_store.is_clarification_pending(chat_id) and self._looks_like_research_clarification(user_text):
+        if self.context_store.is_clarification_pending(chat_id):
             return True
 
         return False
+
+    def cancel_clarification(self, chat_id: str) -> bool:
+        return self.context_store.cancel_clarification(chat_id)
 
     def resolve_mode(self, chat_id: str, user_text: str, mode_hint: str | None = None) -> str:
         existing_context = self.context_store.get_active_context(chat_id) or {}
@@ -197,23 +200,3 @@ class ResearchService:
             "research",
         )
         return any(hint in normalized for hint in start_hints)
-
-    def _looks_like_research_clarification(self, text: str) -> bool:
-        normalized = (text or "").strip().lower()
-        if not normalized:
-            return False
-
-        clarification_markers = (
-            "меня интерес",
-            "горизонт",
-            "частичн",
-            "полная замена",
-            "в 3 года",
-            "в 5 лет",
-            "в 10 лет",
-            "важна",
-            "важно",
-            "фокус",
-            "сфокусируй",
-        )
-        return any(marker in normalized for marker in clarification_markers)

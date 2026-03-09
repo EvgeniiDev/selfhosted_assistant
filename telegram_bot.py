@@ -93,6 +93,8 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("research_help", self.research_help_command))
         self.application.add_handler(CommandHandler("research_reset", self.research_reset_command))
         self.application.add_handler(CommandHandler("research_sources", self.research_sources_command))
+        self.application.add_handler(CommandHandler("research_sessions", self.research_sessions_command))
+        self.application.add_handler(CommandHandler("cancel_research_turn", self.cancel_research_turn_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))  # Обработчик голосовых сообщений
         self.application.add_handler(MessageHandler(filters.AUDIO | filters.Document.ALL, self.handle_audio_file_message))
@@ -193,9 +195,47 @@ class TelegramBot:
         chat_id = str(update.effective_chat.id) if update.effective_chat else ""
         cleared = self.research_service.reset_chat(chat_id)
         if cleared:
-            await update.message.reply_text("🧹 Research контекст для этого чата сброшен.")
+            await update.message.reply_text("🧹 Активная research-сессия сброшена. Остальные сессии сохранены.")
         else:
             await update.message.reply_text("ℹ️ Для этого чата пока нет активного research-контекста.")
+
+    async def cancel_research_turn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_user_allowed(update):
+            await self._send_access_denied_message(update)
+            return
+
+        chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+        cancelled = self.research_service.cancel_clarification(chat_id)
+        if cancelled:
+            await update.message.reply_text("✅ Ожидание ответа на уточняющий вопрос отменено. Следующее сообщение будет обработано как обычный запрос.")
+        else:
+            await update.message.reply_text("ℹ️ Нет активного уточняющего вопроса для отмены.")
+
+    async def research_sessions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_user_allowed(update):
+            await self._send_access_denied_message(update)
+            return
+
+        chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+        store = self.research_service.context_store
+        sessions = store.list_sessions(chat_id)
+        if not sessions:
+            await update.message.reply_text("ℹ️ Нет active research-сессий.")
+            return
+
+        active_id = store.get_active_session_id(chat_id)
+        if not active_id and sessions:
+            active_id = sessions[-1].session_id
+
+        keyboard = []
+        for s in sessions:
+            label = f"{'✅ ' if s.session_id == active_id else ''}{s.session_id}"
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"switch_research_{s.session_id}")])
+
+        await update.message.reply_text(
+            "🔎 Research-сессии (нажмите для переключения):",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
 
     async def research_sources_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_user_allowed(update):
@@ -401,7 +441,15 @@ class TelegramBot:
 
         data = query.data
         
-        if data.startswith("confirm_"):
+        if data.startswith("switch_research_"):
+            session_id = data.replace("switch_research_", "", 1)
+            chat_id = str(query.message.chat.id) if query.message and query.message.chat else ""
+            switched = self.research_service.context_store.set_active_session_id(chat_id, session_id)
+            if switched:
+                await query.edit_message_text(f"✅ Выбрана сессия {session_id}")
+            else:
+                await query.edit_message_text(f"❌ Сессия {session_id} не найдена.")
+        elif data.startswith("confirm_"):
             event_id = data.replace("confirm_", "")
             await self._confirm_event(query, event_id)
         elif data.startswith("cancel_"):

@@ -81,8 +81,6 @@ class ChatApplicationService:
                 )
 
             if action == "note":
-                if self.research_service.should_followup(chat_id, user_message):
-                    return self._execute_research(chat_id, user_message, mode_hint="followup")
                 return ChatResponse(text=result["message"], parse_mode="Markdown")
 
             if action == "research":
