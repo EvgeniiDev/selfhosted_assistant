@@ -45,7 +45,7 @@ class AssistantService:
             # Обрабатываем результат в зависимости от типа
             match result:
                 case Note():
-                    save_result = self._save_note_to_keep(result)
+                    save_result = self._save_note(result)
                     return {
                         'success': True,
                         'action': 'note',
@@ -54,7 +54,7 @@ class AssistantService:
                     }
                 
                 case ListNotesRequest():
-                    return self._list_keep_notes()
+                    return self._list_notes()
                 
                 case CalendarEvent():
                     # Календарное событие - возвращаем данные для подтверждения
@@ -193,7 +193,7 @@ class AssistantService:
 
         return "\n".join(lines)
 
-    def _save_note_to_keep(self, note: Note) -> Dict[str, Any]:
+    def _save_note(self, note: Note) -> Dict[str, Any]:
         """Сохраняет заметку в хранилище и возвращает метаданные файла."""
         if not self.notes_client:
             return {'success': False}
@@ -203,7 +203,7 @@ class AssistantService:
 
         return self.notes_client.save_note(title, body_text) or {'success': False}
 
-    def _list_keep_notes(self) -> Dict[str, Any]:
+    def _list_notes(self) -> Dict[str, Any]:
         """Получает список заметок из хранилища."""
         if not self.notes_client:
             return {

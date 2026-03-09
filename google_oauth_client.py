@@ -43,9 +43,9 @@ class GoogleOAuthClient:
             )
             if needs_refresh:
                 try:
-                    print("🔄 Обновляем OAuth токен из refresh_token...")
+                    calendar_logger.info("GoogleOAuthClient: refreshing OAuth token from refresh_token...")
                     creds.refresh(Request())
-                    print("✅ Токен обновлен в памяти")
+                    calendar_logger.info("GoogleOAuthClient: token refreshed successfully")
                 except Exception as refresh_err:
                     calendar_logger.warning(f"Failed to refresh Google token: {refresh_err}")
 
@@ -90,8 +90,8 @@ class GoogleOAuthClient:
 
     def _authenticate_auto(self) -> Credentials:
         """Interactive OAuth flow."""
-        print("🚀 Запускаем автоматическую авторизацию...")
-        print("💡 После авторизации скопируйте токен в main.env для будущего использования")
+        calendar_logger.info("GoogleOAuthClient: starting interactive OAuth flow...")
+        calendar_logger.info("GoogleOAuthClient: after authorizing, set GOOGLE_OAUTH_TOKEN_V2 in main.env for future use")
 
         if not self._is_interactive_session():
             raise Exception(
@@ -109,8 +109,7 @@ class GoogleOAuthClient:
                 print("📋 Войдите под аккаунтом разработчика (владельца приложения)")
                 creds = flow.run_local_server(port=0)
             except Exception as browser_err:
-                print("⚠️ Не удалось открыть браузер. Переключаемся на авторизацию по ссылке...")
-                print(f"Причина: {browser_err}")
+                calendar_logger.warning(f"GoogleOAuthClient: browser auth failed, switching to manual link flow: {browser_err}")
                 try:
                     try:
                         flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
@@ -146,8 +145,6 @@ class GoogleOAuthClient:
                 return self._credentials_from_token_v2(token_v2)
             except Exception as e:
                 calendar_logger.warning(f"GoogleOAuthClient: невалидный GOOGLE_OAUTH_TOKEN_V2: {e}. Переходим к интерактивной авторизации.")
-                print(f"⚠️  Невалидный GOOGLE_OAUTH_TOKEN_V2: {e}")
-                print("🔄 Запускаем интерактивную авторизацию...")
 
         token_legacy = self.oauth_token_from_env or os.getenv('GOOGLE_OAUTH_TOKEN')
         if token_legacy:
@@ -292,14 +289,24 @@ class GoogleOAuthClient:
     def _print_token_info(self, creds: Credentials) -> None:
         try:
             token_data = json.loads(creds.to_json())
-            token_json = json.dumps(token_data, separators=(',', ':'))
             token_v2_payload = {
+                "client_id": token_data.get("client_id"),
+                "client_secret": "***",
+                "refresh_token": "***",
+                "token_uri": token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
+            }
+            redacted_v2_json = json.dumps(token_v2_payload, separators=(',', ':'))
+            calendar_logger.info("GoogleOAuthClient: authorization completed. Set GOOGLE_OAUTH_TOKEN_V2 in main.env")
+            calendar_logger.info(f"GOOGLE_OAUTH_TOKEN_V2 template (replace *** with real values): {redacted_v2_json}")
+            # Print the full token only to interactive stdout (never captured by process managers).
+            token_v2_full = {
                 "client_id": token_data.get("client_id"),
                 "client_secret": token_data.get("client_secret"),
                 "refresh_token": token_data.get("refresh_token"),
                 "token_uri": token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
             }
-            token_v2_json = json.dumps(token_v2_payload, separators=(',', ':'))
+            token_v2_json = json.dumps(token_v2_full, separators=(',', ':'))
+            token_json = json.dumps(token_data, separators=(',', ':'))
             print("\n" + "=" * 60)
             print("📋 СКОПИРУЙТЕ ЭТОТ ТОКЕН В main.env (предпочтительно V2):")
             print("=" * 60)
