@@ -22,16 +22,23 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install \
-            requests \
-            github-copilot-sdk==0.1.29 \
-            google-api-python-client \
-            google-auth-httplib2 \
-            google-auth-oauthlib \
-            python-telegram-bot==22.3 \
-            pydantic==2.11.7 \
-            python-dateutil \
-            python-dotenv
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("requirements.txt")
+          target = Path("/tmp/fast-ci-requirements.txt")
+          excluded_prefixes = ("ffmpeg-python", "gigaam")
+
+          lines = []
+          for line in source.read_text(encoding="utf-8").splitlines():
+              stripped = line.strip()
+              if stripped.startswith(excluded_prefixes):
+                  continue
+              lines.append(line)
+
+          target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          python -m pip install -r /tmp/fast-ci-requirements.txt
 
       - name: Run fast test suite
         run: |
