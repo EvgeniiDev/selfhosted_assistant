@@ -5,7 +5,6 @@ import warnings
 from typing import Any, Optional
 import time
 import tempfile
-from pydub import AudioSegment
 from telegram import File
 
 import gigaam
@@ -327,18 +326,10 @@ class VoiceService:
             return waveform
                 
         except Exception as e:
-            calendar_logger.warning(f"torchaudio decode failed for {ext}, fallback to pydub: {str(e)}")
+            calendar_logger.warning(f"torchaudio decode failed for {ext}, fallback to torchaudio with format: {str(e)}")
             try:
                 source_buffer = io.BytesIO(audio_bytes)
-                file_format = ext if ext in {"mp3", "wav", "ogg"} else None
-                segment = AudioSegment.from_file(source_buffer, format=file_format)
-                segment = segment.set_channels(1).set_frame_rate(16000)
-
-                wav_buffer = io.BytesIO()
-                segment.export(wav_buffer, format="wav")
-                wav_buffer.seek(0)
-
-                waveform, sample_rate = torchaudio.load(wav_buffer)
+                waveform, sample_rate = torchaudio.load(source_buffer)
 
                 if waveform.shape[0] > 1:
                     waveform = torch.mean(waveform, dim=0, keepdim=True)
