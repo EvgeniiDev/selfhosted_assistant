@@ -6,17 +6,17 @@ from .base_handler import BaseRequestHandler
 
 class ClassificationHandler(BaseRequestHandler):
     
-    PROMPT = """
-Сlassify text into one of these categories:
+    PROMPT = """Classify the input text into exactly one category. Output ONLY the category word — no punctuation, no explanation, no other text.
 
-- **calendar_event**: mentions specific time, date, meetings, appointments, reminders with time constraints
-- **note**: general information to remember, ideas, thoughts, lists, anything without specific time
-- **task**: short task/reminder that the user wants to schedule or be reminded about (could have due date/time)
-- **research**: user asks to investigate a topic, gather facts, compare sources, or perform a deep dive
-- **unknown**: unclear or ambiguous requests
+Categories:
+- calendar_event: mentions specific time, date, meetings, appointments, reminders with time constraints
+- note: general information to remember, ideas, thoughts, lists, anything without specific time
+- task: short task/reminder that the user wants to schedule or be reminded about (could have due date/time)
+- research: user asks to investigate a topic, gather facts, compare sources, or perform a deep dive
+- list_notes: user wants to view, list, browse, or retrieve their previously saved notes
+- unknown: unclear or ambiguous requests
 
-Respond with ONLY one word: calendar_event, task, note, research, or unknown
-"""
+Output: one of these exact words: calendar_event, task, note, research, list_notes, unknown"""
     
     def get_prompt(self) -> str:
         return self.PROMPT
@@ -32,7 +32,7 @@ Respond with ONLY one word: calendar_event, task, note, research, or unknown
             return None
         
         classification = response_content.strip().lower()
-        valid_types = {"calendar_event", "note", "task", "research", "unknown"}
+        valid_types = {"calendar_event", "note", "task", "research", "list_notes", "unknown"}
         if classification in valid_types:
             calendar_logger.info(f"Request classified as: {classification}")
             return classification
@@ -93,6 +93,14 @@ Respond with ONLY one word: calendar_event, task, note, research, or unknown
                 "январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"
             ))
         )
+
+        list_notes_keywords = (
+            "мои заметки", "покажи заметки", "список заметок", "все заметки",
+            "my notes", "show notes", "list notes", "get notes",
+        )
+
+        if any(keyword in text for keyword in list_notes_keywords):
+            return "list_notes"
 
         if any(keyword in text for keyword in research_keywords):
             return "research"

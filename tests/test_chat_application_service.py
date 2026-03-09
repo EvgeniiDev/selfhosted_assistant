@@ -67,6 +67,20 @@ class ChatApplicationServiceTests(unittest.TestCase):
         self.assertEqual(response.parse_mode, "Markdown")
         self.assertFalse(response.needs_confirmation)
 
+    def test_process_text_returns_list_notes_response(self):
+        service = ChatApplicationService(
+            assistant_service=FakeAssistantService(
+                {"success": True, "action": "list_notes", "message": "Notes list"}
+            ),
+            research_service=FakeResearchService(),
+        )
+
+        response = service.process_text("chat-1", "user-1", 1, "show my notes")
+
+        self.assertEqual(response.text, "Notes list")
+        self.assertEqual(response.parse_mode, "Markdown")
+        self.assertFalse(response.needs_confirmation)
+
     def test_process_text_returns_confirmation_for_task(self):
         assistant = FakeAssistantService(
             {

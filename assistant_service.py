@@ -3,7 +3,9 @@ from datetime import datetime
 
 from request_classifier import RequestClassifier
 from google_calendar_client import GoogleCalendarClient
-from models import CalendarEvent, Note, Task, ResearchRequest
+from google_drive_client import GoogleDriveClient
+from google_oauth_client import GoogleOAuthClient
+from models import CalendarEvent, Note, Task, ResearchRequest, ListNotesRequest
 from logger import calendar_logger
 
 
@@ -12,12 +14,21 @@ class AssistantService:
         self.inference = RequestClassifier()
         self.calendar_client = None
         self.google_init_error = None
+        self.notes_client = None
+        self.notes_init_error = None
+        self.oauth_client = GoogleOAuthClient(scopes=GoogleOAuthClient.DEFAULT_SCOPES)
 
         try:
-            self.calendar_client = GoogleCalendarClient()
+            self.calendar_client = GoogleCalendarClient(oauth_client=self.oauth_client)
         except Exception as e:
             self.google_init_error = str(e)
             calendar_logger.log_error(e, "assistant_service.__init__ - GoogleCalendarClient")
+
+        try:
+            self.notes_client = GoogleDriveClient(oauth_client=self.oauth_client)
+        except Exception as e:
+            self.notes_init_error = str(e)
+            calendar_logger.warning(f"GoogleDriveClient unavailable: {e}")
 
     def process_user_request(self, user_message: str) -> Dict[str, Any]:
         """Обрабатывает запрос пользователя и создает событие в календаре или возвращает заметку"""
@@ -34,13 +45,16 @@ class AssistantService:
             # Обрабатываем результат в зависимости от типа
             match result:
                 case Note():
-                    # Заметка - возвращаем её сразу
+                    save_result = self._save_note_to_keep(result)
                     return {
                         'success': True,
                         'action': 'note',
                         'note': result,
-                        'message': self._format_note_response(result)
+                        'message': self._format_note_response(result, save_result=save_result)
                     }
+                
+                case ListNotesRequest():
+                    return self._list_keep_notes()
                 
                 case CalendarEvent():
                     # Календарное событие - возвращаем данные для подтверждения
@@ -146,30 +160,99 @@ class AssistantService:
 
         return message
 
-    def _format_note_response(self, note: Note) -> str:
-        """Форматирует заметку для отправки пользователю"""
-        # Форматируем дату создания
-        try:
-            created_time = datetime.fromisoformat(note.created_at)
-            created_str = created_time.strftime("%d.%m.%Y в %H:%M")
-        except:
-            created_str = note.created_at
+    def _format_note_response(self, note: Note, save_result: Dict[str, Any] | None = None) -> str:
+        """Форматирует ответ по заметке без дублирования полного текста."""
+        resolved_title = (save_result or {}).get('title', note.title)
+        summary = (note.content or '').strip()
+        preview = summary if len(summary) <= 220 else summary[:217].rstrip() + '...'
 
-        # Собираем сообщение
-        message = f"""📝 **Ваша заметка**
+        lines = [
+            "📝 **Заметка готова**",
+            "",
+            f"**Тема:** {resolved_title}",
+        ]
 
-**{note.title}**
+        if preview:
+            lines.extend(["", f"**Кратко:** {preview}"])
 
-{note.content}
+        # Дата создания берется из метаданных файла (Drive createdTime), если доступна.
+        created_at = (save_result or {}).get('created_at')
+        if created_at:
+            try:
+                created_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                lines.extend(["", f"📅 Создано: {created_time.strftime('%d.%m.%Y в %H:%M')}"])
+            except Exception:
+                pass
 
-📅 Создано: {created_str}"""
+        web_link = (save_result or {}).get('web_link')
+        if web_link:
+            lines.extend(["", f"[Открыть заметку]({web_link})"])
 
-        # Добавляем теги, если они есть
-        if note.tags and len(note.tags) > 0:
-            tags_str = " ".join([f"#{tag}" for tag in note.tags])
-            message += f"\n🏷️ Теги: {tags_str}"
+        if (save_result or {}).get('success'):
+            lines.extend(["", "✅ Сохранено"])
 
-        return message
+        return "\n".join(lines)
+
+    def _save_note_to_keep(self, note: Note) -> Dict[str, Any]:
+        """Сохраняет заметку в хранилище и возвращает метаданные файла."""
+        if not self.notes_client:
+            return {'success': False}
+
+        title = (note.title or "").strip()
+        body_text = (note.content or "").strip()
+
+        return self.notes_client.save_note(title, body_text) or {'success': False}
+
+    def _list_keep_notes(self) -> Dict[str, Any]:
+        """Получает список заметок из хранилища."""
+        if not self.notes_client:
+            return {
+                'success': False,
+                'message': f'Сервис заметок недоступен: {self.notes_init_error or "проверьте настройки авторизации"}',
+            }
+
+        result = self.notes_client.list_notes(page_size=10) or {}
+        if not result.get('success'):
+            return {
+                'success': False,
+                'message': result.get('message') or 'Ошибка при получении заметок',
+            }
+
+        files = result.get('files', [])
+        return {
+            'success': True,
+            'action': 'list_notes',
+            'files': files,
+            'message': self._format_drive_notes_list(files),
+        }
+
+    def _format_drive_notes_list(self, files: list) -> str:
+        """Форматирует список заметок."""
+        if not files:
+            return "📝 Заметок не найдено."
+        lines = [f"📝 **Список заметок** ({len(files)}):\n"]
+        for i, file in enumerate(files, 1):
+            title = file.get('name', '*(без названия)*')
+            if title.lower().endswith('.txt'):
+                title = title[:-4]
+
+            created_time = file.get('createdTime', '')
+            created_label = ''
+            if created_time:
+                try:
+                    parsed = datetime.fromisoformat(created_time.replace('Z', '+00:00'))
+                    created_label = parsed.strftime('%d.%m.%Y %H:%M')
+                except Exception:
+                    created_label = created_time
+
+            web_link = file.get('webViewLink', '')
+            lines.append(f"**{i}. {title}**")
+            if created_label:
+                lines.append(f"📅 {created_label}")
+            if web_link:
+                lines.append(f"[Открыть]({web_link})")
+            lines.append("")
+        return "\n".join(lines).rstrip()
 
     def _task_to_calendar_event(self, task: Task) -> CalendarEvent:
         """Convert Task to CalendarEvent for confirmation/creation."""
