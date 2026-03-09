@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("requirements.txt")
+          target = Path("/tmp/fast-ci-requirements.txt")
+          excluded_prefixes = ("ffmpeg-python", "gigaam")
+
+          lines = []
+          for line in source.read_text(encoding="utf-8").splitlines():
+              stripped = line.strip()
+              if stripped.startswith(excluded_prefixes):
+                  continue
+              lines.append(line)
+
+          target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          python -m pip install -r /tmp/fast-ci-requirements.txt
+
+      - name: Run fast test suite
+        run: |
+          python scripts/run_tests.py fast --verbosity 2
