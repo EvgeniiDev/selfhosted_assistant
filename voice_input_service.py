@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from chat_application_service import ChatApplicationService, ChatResponse
 from logger import calendar_logger
-from voice_service import VoiceService
+
+if TYPE_CHECKING:
+    from voice_service import VoiceService
 
 
 @dataclass(slots=True)
