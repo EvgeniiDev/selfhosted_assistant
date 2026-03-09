@@ -9,11 +9,10 @@ try:
 except ImportError:
     pass
 
-from assistant_service import AssistantService
+from chat_application_service import ChatApplicationService, ChatResponse
 from voice_service import VoiceService
+from voice_input_service import VoiceInputService
 from logger import calendar_logger
-from llm_core import LLMRequest
-from research_context_store import ResearchContextStore
 
 
 class TelegramBot:
@@ -25,12 +24,11 @@ class TelegramBot:
 
     def __init__(self, token: str):
         self.token = token
-        self.assistant_service = AssistantService()
+        self.chat_service = ChatApplicationService()
+        self.research_service = self.chat_service.research_service
         self.voice_service = VoiceService(device="cpu")  # Используем CPU для инференса
+        self.voice_input_service = VoiceInputService(self.voice_service, self.chat_service)
         self.application = Application.builder().token(token).build()
-        # Хранилище для ожидающих подтверждения событий
-        self.pending_events = {}
-        self.research_store = ResearchContextStore()
         
         # Настройка разрешенных пользователей
         allowed_users_str = os.getenv('TELEGRAM_ALLOWED_USERS', '').strip()
@@ -193,7 +191,7 @@ class TelegramBot:
             return
 
         chat_id = str(update.effective_chat.id) if update.effective_chat else ""
-        cleared = self.research_store.reset_chat(chat_id)
+        cleared = self.research_service.reset_chat(chat_id)
         if cleared:
             await update.message.reply_text("🧹 Research контекст для этого чата сброшен.")
         else:
@@ -205,7 +203,7 @@ class TelegramBot:
             return
 
         chat_id = str(update.effective_chat.id) if update.effective_chat else ""
-        urls = self.research_store.list_sources(chat_id)
+        urls = self.research_service.list_sources(chat_id)
         if not urls:
             await update.message.reply_text("ℹ️ Источники не найдены. Сначала запустите research-запрос.")
             return
@@ -222,15 +220,17 @@ class TelegramBot:
             await self._send_access_denied_message(update)
             return
             
+        chat_id = str(update.effective_chat.id) if update.effective_chat else ""
         user_id = str(update.effective_user.id) if update.effective_user else None
         username = update.effective_user.username if update.effective_user else None
+        message_id = update.message.message_id if update.message else None
 
         # Показываем, что бот обрабатывает голосовое сообщение
         processing_message = await update.message.reply_text("🎤 Обрабатываю голосовое сообщение...")
 
         try:
             # Проверяем, загружена ли модель
-            if not self.voice_service.is_model_loaded():
+            if not self.voice_input_service.is_model_loaded():
                 await processing_message.edit_text("❌ Модель распознавания речи не загружена")
                 return
 
@@ -241,21 +241,18 @@ class TelegramBot:
             # Обновляем статус
             await processing_message.edit_text("🎤 Распознаю речь...")
 
-            # Транскрибируем голосовое сообщение
-            transcription = await self.voice_service.transcribe_voice_message(voice_file)
-
-            if not transcription:
-                await processing_message.edit_text("❌ Не удалось распознать речь. Попробуйте записать сообщение заново.")
-                return
-
-            # Логируем запрос пользователя
-            calendar_logger.log_user_request(user_id, username, f"[VOICE] {transcription}")
-
-            # Показываем распознанный текст пользователю
-            await processing_message.edit_text(f"🎤 Распознанный текст: *{transcription}*\n\nОбрабатываю запрос...", parse_mode='Markdown')
-
-            # Обрабатываем транскрибированный текст как обычное текстовое сообщение
-            await self._process_text_request(update, transcription, processing_message)
+            result = await self.voice_input_service.process_voice_message(
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                message_id=message_id,
+                voice_file=voice_file,
+            )
+            await processing_message.edit_text(
+                f"🎤 Распознанный текст: *{result.transcription}*\n\nОбрабатываю запрос...",
+                parse_mode='Markdown'
+            )
+            await self._render_chat_response(update, result.chat_response, processing_message)
 
         except Exception as e:
             calendar_logger.log_error(e, "telegram_bot.handle_voice_message")
@@ -301,6 +298,8 @@ class TelegramBot:
 
         user_id = str(update.effective_user.id) if update.effective_user else None
         username = update.effective_user.username if update.effective_user else None
+        chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+        message_id = update.message.message_id if update.message else None
 
         audio_obj = None
         filename = None
@@ -331,27 +330,27 @@ class TelegramBot:
         processing_message = await message.reply_text("🎵 Обрабатываю аудиофайл...")
 
         try:
-            if not self.voice_service.is_model_loaded():
+            if not self.voice_input_service.is_model_loaded():
                 await processing_message.edit_text("❌ Модель распознавания речи не загружена")
                 return
 
             tg_file = await context.bot.get_file(audio_obj.file_id)
             await processing_message.edit_text("🎵 Распознаю речь...")
 
-            transcription = await self.voice_service.transcribe_audio_file(tg_file, source_extension=detected_ext)
-
-            if not transcription:
-                await processing_message.edit_text("❌ Не удалось распознать речь из аудиофайла. Попробуйте другой файл.")
-                return
-
-            calendar_logger.log_user_request(user_id, username, f"[{source_label}] {transcription}")
-
+            result = await self.voice_input_service.process_audio_file(
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                message_id=message_id,
+                audio_file=tg_file,
+                source_extension=detected_ext,
+                source_label=source_label,
+            )
             await processing_message.edit_text(
-                f"🎵 Распознанный текст: *{transcription}*\n\nОбрабатываю запрос...",
+                f"🎵 Распознанный текст: *{result.transcription}*\n\nОбрабатываю запрос...",
                 parse_mode='Markdown'
             )
-
-            await self._process_text_request(update, transcription, processing_message)
+            await self._render_chat_response(update, result.chat_response, processing_message)
 
         except Exception as e:
             calendar_logger.log_error(e, "telegram_bot.handle_audio_file_message")
@@ -359,120 +358,13 @@ class TelegramBot:
 
     async def _process_text_request(self, update: Update, user_message: str, processing_message=None):
         """Общий метод для обработки текстовых запросов"""
-        user_id = str(update.effective_user.id) if update.effective_user else None
         chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+        user_id = str(update.effective_user.id) if update.effective_user else None
+        message_id = update.message.message_id if update.message else None
 
         try:
-            if self._should_force_research_new(chat_id, user_message):
-                forced_result = {
-                    "success": True,
-                    "action": "research",
-                    "original_query": user_message,
-                    "mode": "new",
-                }
-                await self._handle_research_action(update, user_message, forced_result, processing_message)
-                return
-
-            if self._should_force_research_followup(chat_id, user_message):
-                forced_result = {
-                    "success": True,
-                    "action": "research",
-                    "original_query": user_message,
-                    "mode": "followup",
-                }
-                await self._handle_research_action(update, user_message, forced_result, processing_message)
-                return
-
-            # Обрабатываем запрос через ассистент сервис
-            result = self.assistant_service.process_user_request(user_message)
-
-            if result.get('success') and result.get('action') == 'confirm':
-                # Событие готово к подтверждению
-                event = result['event']
-                message = result['message']
-                
-                # Сохраняем событие для подтверждения
-                event_id = f"{user_id}_{update.message.message_id}"
-                self.pending_events[event_id] = {"type": "event", "payload": event}
-                
-                # Создаем клавиатуру с кнопками
-                keyboard = [
-                    [
-                        InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm_{event_id}"),
-                        InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_{event_id}")
-                    ],
-                    [
-                        InlineKeyboardButton("✏️ Редактировать", callback_data=f"edit_{event_id}")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                if processing_message:
-                    await processing_message.edit_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-                else:
-                    await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-                
-            elif result.get('success') and result.get('action') == 'note':
-                if self._should_force_research_followup(chat_id, user_message):
-                    forced_result = {
-                        "success": True,
-                        "action": "research",
-                        "original_query": user_message,
-                        "mode": "followup",
-                    }
-                    await self._handle_research_action(update, user_message, forced_result, processing_message)
-                    return
-
-                # Заметка - отправляем её пользователю сразу
-                note_message = result['message']
-                
-                if processing_message:
-                    await processing_message.edit_text(note_message, parse_mode='Markdown')
-                else:
-                    await update.message.reply_text(note_message, parse_mode='Markdown')
-
-            elif result.get('success') and result.get('action') == 'research':
-                await self._handle_research_action(update, user_message, result, processing_message)
-                
-            elif result.get('success'):
-                # Generic success (e.g., task confirm)
-                # Если это подтверждение задачи — сохраним payload как задачу
-                if result.get('action') == 'confirm_task':
-                    task = result['task']
-                    event_id = f"{user_id}_{update.message.message_id}"
-                    self.pending_events[event_id] = {"type": "task", "payload": task}
-                    # reuse keyboard
-                    keyboard = [
-                        [
-                            InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm_{event_id}"),
-                            InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_{event_id}")
-                        ],
-                        [
-                            InlineKeyboardButton("✏️ Редактировать", callback_data=f"edit_{event_id}")
-                        ]
-                    ]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    if processing_message:
-                        await processing_message.edit_text(result['message'], reply_markup=reply_markup, parse_mode='Markdown')
-                    else:
-                        await update.message.reply_text(result['message'], reply_markup=reply_markup, parse_mode='Markdown')
-                    return
-
-                response = f"✅ {result['message']}"
-                if result.get('event_link'):
-                    response += f"\n\n🔗 <a href=\"{result['event_link']}\">Ссылка на событие</a>"
-                
-                # Используем HTML parse_mode для корректной обработки ссылок
-                if processing_message:
-                    await processing_message.edit_text(response, parse_mode='HTML', disable_web_page_preview=True)
-                else:
-                    await update.message.reply_text(response, parse_mode='HTML', disable_web_page_preview=True)
-            else:
-                response = f"❌ {result['message']}"
-                if processing_message:
-                    await processing_message.edit_text(response)
-                else:
-                    await update.message.reply_text(response)
+            response = self.chat_service.process_text(chat_id, user_id, message_id, user_message)
+            await self._render_chat_response(update, response, processing_message)
 
         except Exception as e:
             calendar_logger.log_error(e, "telegram_bot._process_text_request")
@@ -521,223 +413,61 @@ class TelegramBot:
 
     async def _confirm_event(self, query, event_id: str):
         """Подтверждение создания события"""
-        if event_id not in self.pending_events:
-            await query.edit_message_text("❌ Событие не найдено или уже обработано.")
-            return
-        pending = self.pending_events[event_id]
-
-        try:
-            if pending.get('type') == 'event':
-                event = pending.get('payload')
-                result = self.assistant_service.create_confirmed_event(event)
-            elif pending.get('type') == 'task':
-                task = pending.get('payload')
-                result = self.assistant_service.create_confirmed_task(task)
-            else:
-                await query.edit_message_text("❌ Неподдерживаемый тип для подтверждения.")
-                return
-
-            if result.get('success'):
-                response = f"✅ {result['message']}"
-                if result.get('event_link'):
-                    response += f"\n\n🔗 <a href=\"{result['event_link']}\">Ссылка на событие</a>"
-            else:
-                response = f"❌ {result['message']}"
-
-            # Используем HTML parse_mode для корректной обработки ссылок, но если в ответе есть неподдерживаемые теги — отправляем plain text
-            try:
-                await query.edit_message_text(response, parse_mode='HTML', disable_web_page_preview=True)
-            except Exception:
-                await query.edit_message_text(response)
-
-            # Удаляем элемент из ожидающих
-            del self.pending_events[event_id]
-
-        except Exception as e:
-            calendar_logger.log_error(e, "telegram_bot._confirm_event")
-            await query.edit_message_text(f"❌ Произошла ошибка при создании: {str(e)}")
+        response = self.chat_service.confirm_pending(event_id)
+        await self._edit_callback_message(query, response)
 
     async def _cancel_event(self, query, event_id: str):
         """Отмена создания события"""
-        if event_id in self.pending_events:
-            del self.pending_events[event_id]
-        
-        await query.edit_message_text("❌ Создание события отменено.")
+        response = self.chat_service.cancel_pending(event_id)
+        await self._edit_callback_message(query, response)
 
     async def _edit_event(self, query, event_id: str):
         """Редактирование события"""
-        if event_id not in self.pending_events:
-            await query.edit_message_text("❌ Событие не найдено или уже обработано.")
-            return
+        response = self.chat_service.edit_pending(event_id)
+        await self._edit_callback_message(query, response)
 
-        pending = self.pending_events[event_id]
-        event = pending.get("payload")
-        if event is None:
-            await query.edit_message_text("❌ Событие не найдено или уже обработано.")
-            del self.pending_events[event_id]
-            return
-        
-        # Формируем сообщение с данными для редактирования
-        edit_message = f"""✏️ **Редактирование события**
-
-Скопируйте, исправьте и отправьте данные в следующем формате:
-
-```
-Название: {event.title}
-Время: {event.start_time.strftime("%d.%m.%Y %H:%M")}"""
-
-        if event.duration_minutes:
-            edit_message += f"\nДлительность: {event.duration_minutes} минут"
-        elif event.end_time:
-            edit_message += f"\nОкончание: {event.end_time.strftime('%H:%M')}"
-
-        if event.description:
-            edit_message += f"\nОписание: {event.description}"
-
-        edit_message += "\n```\n\nИли напишите новый запрос заново."
-
-        await query.edit_message_text(edit_message, parse_mode='Markdown')
-        
-        # Удаляем текущее событие из ожидающих
-        del self.pending_events[event_id]
-
-    def _is_research_followup(self, text: str) -> bool:
-        normalized = (text or "").strip().lower()
-        if not normalized:
-            return False
-
-        followup_hints = (
-            "подробнее",
-            "раскрой",
-            "уточни",
-            "деталь",
-            "разверни",
-            "пункт",
-            "follow-up",
-            "follow up",
-            "more details",
-            "elaborate",
-        )
-        return any(hint in normalized for hint in followup_hints)
-
-    def _is_research_start(self, text: str) -> bool:
-        normalized = (text or "").strip().lower()
-        if not normalized:
-            return False
-
-        start_hints = (
-            "исследуй",
-            "найди информацию",
-            "проведи исследование",
-            "изучи тему",
-            "deep dive",
-            "investigate",
-            "research",
-        )
-        return any(hint in normalized for hint in start_hints)
-
-    def _looks_like_research_clarification(self, text: str) -> bool:
-        normalized = (text or "").strip().lower()
-        if not normalized:
-            return False
-
-        clarification_markers = (
-            "меня интерес",
-            "горизонт",
-            "частичн",
-            "полная замена",
-            "в 3 года",
-            "в 5 лет",
-            "в 10 лет",
-            "важна",
-            "важно",
-            "фокус",
-            "сфокусируй",
-        )
-        return any(marker in normalized for marker in clarification_markers)
-
-    def _should_force_research_followup(self, chat_id: str, user_text: str) -> bool:
-        if not chat_id:
-            return False
-
-        context = self.research_store.get_active_context(chat_id)
-        if not context:
-            return False
-
-        if self._is_research_followup(user_text):
-            return True
-
-        if self.research_store.is_clarification_pending(chat_id) and self._looks_like_research_clarification(user_text):
-            return True
-
-        return False
-
-    def _should_force_research_new(self, chat_id: str, user_text: str) -> bool:
-        if not self._is_research_start(user_text):
-            return False
-
-        context = self.research_store.get_active_context(chat_id)
-        # If there is active context and user still uses start trigger, treat as follow-up/new topic
-        # through research flow directly and avoid classification LLM call.
-        return True if chat_id else False
-
-    def _build_research_prompt(self, user_text: str, mode: str, context_payload: dict) -> str:
-        if mode == "followup":
-            brief = (context_payload.get("brief") or "").strip()
-            findings = context_payload.get("findings") or []
-            sources = context_payload.get("sources") or []
-
-            top_findings = []
-            for item in findings[:10]:
-                claim = str(item.get("claim", "")).strip()
-                status = str(item.get("status", "UNCERTAIN")).strip().upper()
-                if claim:
-                    top_findings.append(f"- [{status}] {claim}")
-
-            top_sources = []
-            for item in sources[:10]:
-                url = str(item.get("url", "")).strip()
-                if url:
-                    top_sources.append(f"- {url}")
-
-            return (
-                "Используй skill `research-pipeline`.\n"
-                "Это follow-up к предыдущему исследованию.\n\n"
-                f"Вопрос пользователя: {user_text}\n"
-                "Контекст предыдущего исследования:\n"
-                f"- Краткий итог: {brief or 'нет данных'}\n"
-                f"- Ключевые факты:\n{chr(10).join(top_findings) if top_findings else '- нет данных'}\n"
-                f"- Источники:\n{chr(10).join(top_sources) if top_sources else '- нет данных'}\n\n"
-                "Требования:\n"
-                "1) Ответь по существующему контексту\n"
-                "2) Если данных мало, добери только недостающее\n"
-                "3) Отметь новые данные и новые источники отдельно\n"
+    async def _render_chat_response(self, update: Update, response: ChatResponse, processing_message=None):
+        reply_markup = self._build_confirmation_markup(response.pending_id) if response.needs_confirmation else None
+        if processing_message:
+            await processing_message.edit_text(
+                response.text,
+                parse_mode=response.parse_mode,
+                disable_web_page_preview=response.disable_web_page_preview,
+                reply_markup=reply_markup,
             )
+            return
 
-        return (
-            "Используй skill `research-pipeline` из подключенных skills.\n"
-            f"Тема: {user_text}\n\n"
-            "Требования к ответу:\n"
-            "1) Краткий итог (3-7 пунктов)\n"
-            "2) Факты с метками [CONFIRMED]/[UNCERTAIN]/[NOT_FOUND]\n"
-            "3) Список источников (URL)\n"
-            "4) Что осталось непроверенным\n"
+        await update.message.reply_text(
+            response.text,
+            parse_mode=response.parse_mode,
+            disable_web_page_preview=response.disable_web_page_preview,
+            reply_markup=reply_markup,
         )
 
-    def _compact_research_answer(self, response_text: str) -> str:
-        text = (response_text or "").strip()
-        if not text:
-            return "⚠️ Исследование завершилось пустым ответом."
+    async def _edit_callback_message(self, query, response: ChatResponse):
+        try:
+            await query.edit_message_text(
+                response.text,
+                parse_mode=response.parse_mode,
+                disable_web_page_preview=response.disable_web_page_preview,
+            )
+        except Exception:
+            await query.edit_message_text(response.text)
 
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        compact_lines = lines[:18]
-        compact = "\n".join(compact_lines)
-        if len(lines) > len(compact_lines):
-            compact += "\n\n...\nНапишите 'подробнее', чтобы углубиться по пунктам."
+    def _build_confirmation_markup(self, pending_id: str) -> InlineKeyboardMarkup | None:
+        if not pending_id:
+            return None
 
-        if len(compact) > 2500:
-            compact = compact[:2500].rstrip() + "\n\n...\nНапишите 'подробнее' для продолжения."
-        return compact
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm_{pending_id}"),
+                InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_{pending_id}"),
+            ],
+            [
+                InlineKeyboardButton("✏️ Редактировать", callback_data=f"edit_{pending_id}"),
+            ],
+        ]
+        return InlineKeyboardMarkup(keyboard)
 
     async def _send_long_message(self, message, text: str, parse_mode: Optional[str] = None):
         if not text:
@@ -765,63 +495,6 @@ class TelegramBot:
             remaining = remaining[split_at:].lstrip("\n")
 
         return chunks
-
-    async def _handle_research_action(self, update: Update, user_message: str, result: dict, processing_message=None):
-        chat_id = str(update.effective_chat.id) if update.effective_chat else ""
-        existing_context = self.research_store.get_active_context(chat_id) or {}
-
-        mode = result.get("mode", "new")
-        if self._is_research_followup(user_message) and existing_context:
-            mode = "followup"
-        if mode == "followup" and not existing_context:
-            mode = "new"
-
-        copilot_session_id = self.research_store.get_or_create_copilot_session_id(chat_id) if chat_id else ""
-        wrapped_prompt = self._build_research_prompt(result.get("original_query", user_message), mode, existing_context)
-        research_request = LLMRequest(
-            content=wrapped_prompt,
-            task_type="research",
-            system_prompt="You are a precise research assistant. Follow the requested output structure exactly.",
-            metadata={
-                "is_private": True,
-                "handler": "ResearchMode",
-                "copilot_session_id": copilot_session_id,
-            },
-            text_only=True,
-            allow_mcp_tools=True,
-        )
-
-        try:
-            llm_response = self.assistant_service.inference.gateway.generate(research_request)
-            response_text = (llm_response.content or "").strip()
-            if not response_text:
-                raise RuntimeError("empty response")
-
-            compact_answer = self._compact_research_answer(response_text)
-
-            try:
-                self.research_store.save_turn(chat_id, user_message, response_text)
-                self.research_store.save_artifacts(chat_id, response_text)
-            except Exception as store_exc:
-                calendar_logger.log_error(store_exc, "telegram_bot._handle_research_action.store")
-
-            prefix = "🔎 Follow-up исследование" if mode == "followup" else "🔎 Исследование"
-            outbound = f"{prefix}\n\n{compact_answer}"
-            if processing_message:
-                await processing_message.edit_text(outbound, disable_web_page_preview=True)
-            else:
-                await self._send_long_message(update.message, outbound)
-
-        except Exception as exc:
-            calendar_logger.log_error(exc, "telegram_bot._handle_research_action")
-            fallback = (
-                "⚠️ Не удалось выполнить research-запрос через skill/runtime. "
-                "Проверьте авторизацию Copilot (`gh auth login`) и доступность skills."
-            )
-            if processing_message:
-                await processing_message.edit_text(fallback)
-            else:
-                await update.message.reply_text(fallback)
 
     def run(self):
         """Запуск бота"""
