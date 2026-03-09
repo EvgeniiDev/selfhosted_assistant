@@ -120,6 +120,28 @@ Research skill smoke:
 .venv\Scripts\python.exe scripts\smoke_research_skill.py --prompt "Исследуй тему retrieval augmented generation"
 ```
 
+### Python test launcher
+
+Для быстрого запуска тестов без длинных `unittest` команд используйте Python launcher:
+
+```bash
+.venv\Scripts\python.exe scripts\run_tests.py fast
+.venv\Scripts\python.exe scripts\run_tests.py non-telegram
+.venv\Scripts\python.exe scripts\run_tests.py real-copilot
+.venv\Scripts\python.exe scripts\run_tests.py all --include-real
+```
+
+Что делает:
+
+- `fast` / `non-telegram`: локальные сервисные тесты без Telegram integration и без реального Copilot runtime.
+- `real-copilot`: реальные integration tests против `github-copilot-sdk`; скрипт сам выставит `RUN_REAL_COPILOT_INTEGRATION=1`.
+- `all --include-real`: объединенный прогон локальных и real Copilot тестов.
+
+Дополнительно:
+
+- `--list` печатает состав suite без запуска.
+- `--verbosity 1` или `--verbosity 2` управляет детализацией вывода.
+
 ## Research Mode
 
 Поддерживается отдельный intent `research` с использованием skills Copilot runtime (например, `research-pipeline`).
