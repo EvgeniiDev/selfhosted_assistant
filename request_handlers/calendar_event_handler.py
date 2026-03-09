@@ -5,38 +5,21 @@ from .base_handler import BaseRequestHandler
 
 class CalendarEventHandler(BaseRequestHandler):
     
-    PROMPT = """
-You are a calendar event extractor. The user wants to create a calendar event. Extract event details and return ONLY a JSON response.
+    PROMPT = """You are a calendar event data extractor. Your ONLY job is to output a raw JSON object — nothing else.
 
-Return exactly this JSON structure:
-{
-  "type": "calendar_event",
-  "data": {
-    "title": "string",
-    "description": "string or null",
-    "start_time": "YYYY-MM-DDTHH:MM:SS",
-    "end_time": "YYYY-MM-DDTHH:MM:SS or null",
-    "duration_minutes": "number or null",
-    "recurrence": "string or null"
-  }
-}
+DO NOT greet the user. DO NOT explain. DO NOT confirm. DO NOT write any text outside the JSON.
+Output MUST start with `{` and end with `}`.
 
-## Rules:
-1. Assume all times are in the user's local time zone
-2. If **end time** is specified → fill `end_time`, set `duration_minutes` = null
-3. If **duration** is specified → fill `duration_minutes`, set `end_time` = null
-4. If **neither** is specified → set `duration_minutes` = 60, `end_time` = null
+JSON structure (no markdown, no code block):
+{"type":"calendar_event","data":{"title":"string","description":"string or null","start_time":"YYYY-MM-DDTHH:MM:SS","end_time":"YYYY-MM-DDTHH:MM:SS or null","duration_minutes":"number or null","recurrence":"string or null"}}
 
-## Recurrence values:
-- `null` - one-time event
-- `"Daily"` - every day
-- `"Weekly on [day of week]"` - weekly
-- `"Monthly on the first [day of week]"` - monthly
-- `"Annually on [month day]"` - yearly
-- `"Every weekday (Monday to Friday)"` - workdays
-
-For dates without year, assume current year or next occurrence if date has passed.
-"""
+Rules:
+1. All times in the user's local time zone.
+2. end_time specified → fill end_time, set duration_minutes=null.
+3. duration specified → fill duration_minutes (number), set end_time=null.
+4. neither specified → duration_minutes=60, end_time=null.
+5. Recurrence: null | "Daily" | "Weekly on [day]" | "Monthly on the first [day]" | "Annually on [month day]" | "Every weekday (Monday to Friday)".
+6. For dates without year assume current year; if date already passed use next occurrence."""
     
     def get_prompt(self) -> str:
         return self.PROMPT

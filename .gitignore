@@ -136,6 +136,7 @@ venv.bak/
 # Visual Studio Code
 #  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
 .vscode/
+*.code-workspace
 
 # Project specific
 # Google API credentials

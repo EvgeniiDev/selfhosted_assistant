@@ -113,8 +113,8 @@ class CopilotSDKProvider:
     def _approve_all_permissions(request: Any, invocation: Any) -> PermissionRequestResult:
         return cast(PermissionRequestResult, PermissionHandler.approve_all(request, invocation))
 
-    def __init__(self, timeout_seconds: int = 90, retries: int = 2):
-        self.timeout_seconds = timeout_seconds
+    def __init__(self, timeout_seconds: int = 300, retries: int = 2):
+        self.timeout_seconds = int(timeout_seconds)
         self.retries = retries
         self.model_fallback = os.getenv("COPILOT_MODEL", "gpt-4.1")
         self.working_directory = str(Path(os.getenv("COPILOT_WORKING_DIRECTORY", Path.cwd())).resolve())

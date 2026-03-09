@@ -190,3 +190,8 @@ class ResearchRequest(BaseModel):
     original_query: str
     mode_hint: Optional[Literal["new", "followup"]] = None
 
+
+class ListNotesRequest(BaseModel):
+    """Sentinel for list-notes routing."""
+    pass
+
