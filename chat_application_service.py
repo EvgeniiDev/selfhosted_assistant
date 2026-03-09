@@ -81,10 +81,10 @@ class ChatApplicationService:
                 )
 
             if action == "note":
-                return ChatResponse(text=result["message"], parse_mode="Markdown")
+                return ChatResponse(text=result["message"], parse_mode="Markdown", disable_web_page_preview=True)
 
             if action == "list_notes":
-                return ChatResponse(text=result["message"], parse_mode="Markdown")
+                return ChatResponse(text=result["message"], parse_mode="Markdown", disable_web_page_preview=True)
 
             if action == "research":
                 return self._execute_research(

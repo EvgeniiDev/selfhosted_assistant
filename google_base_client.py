@@ -8,8 +8,10 @@ from google_oauth_client import GoogleOAuthClient
 class GoogleBaseClient(ABC):
     """Base class for Google API clients.
 
-    Subclasses declare SCOPES and implement _setup_services(creds) to build
-    and assign their service objects from authenticated credentials.
+    All subclasses share a single OAuth token using GoogleOAuthClient.DEFAULT_SCOPES
+    (Calendar + Tasks + Drive) so re-authorization is never needed when adding a new
+    Google service.  Subclasses implement _setup_services(creds) to build and assign
+    their service objects from the authenticated credentials.
     """
 
     SCOPES: List[str] = []

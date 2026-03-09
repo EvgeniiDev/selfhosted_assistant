@@ -65,6 +65,7 @@ class ChatApplicationServiceTests(unittest.TestCase):
 
         self.assertEqual(response.text, "Saved note")
         self.assertEqual(response.parse_mode, "Markdown")
+        self.assertTrue(response.disable_web_page_preview)
         self.assertFalse(response.needs_confirmation)
 
     def test_process_text_returns_list_notes_response(self):
@@ -79,6 +80,7 @@ class ChatApplicationServiceTests(unittest.TestCase):
 
         self.assertEqual(response.text, "Notes list")
         self.assertEqual(response.parse_mode, "Markdown")
+        self.assertTrue(response.disable_web_page_preview)
         self.assertFalse(response.needs_confirmation)
 
     def test_process_text_returns_confirmation_for_task(self):
