@@ -90,15 +90,6 @@ class CalendarLogger:
         )
         self.logger.info(log_msg)
 
-    def log_fallback(self, from_provider: str, to_provider: str, reason: str):
-        """Логирование fallback между провайдерами."""
-        timestamp = datetime.now().isoformat()
-        log_msg = (
-            f"LLM_FALLBACK | From: {from_provider} | To: {to_provider} | "
-            f"Reason: {reason} | Time: {timestamp}"
-        )
-        self.logger.warning(log_msg)
-
     def log_policy_decision(self, policy_code: str, allowed: bool, reason: str, details: Dict[str, Any]):
         """Логирование решений policy-слоя."""
         timestamp = datetime.now().isoformat()

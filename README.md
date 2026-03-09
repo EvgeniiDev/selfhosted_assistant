@@ -14,15 +14,14 @@ Telegram-ассистент, который:
 
 - `Application`: Telegram flow и бизнес-логика обработчиков.
 - `LLM Core`: `llm_core/contracts.py`, `llm_core/router.py`, `llm_core/gateway.py`, `llm_core/policy.py`.
-- `Integrations`: `integrations/copilot_sdk/provider.py`, `integrations/openrouter/provider.py`.
+- `Integrations`: `integrations/copilot_sdk/provider.py`.
 
 Текущее поведение:
 
 - активный провайдер задается в `llm_routing_config.json` (`copilot` по умолчанию),
-- `openrouter` подключен как standby,
 - pipeline обработчиков идет через `LLMGateway`,
 - policy-layer применяет `text_only` и whitelist для MCP,
-- в логах фиксируются route/fallback/policy/usage.
+- в логах фиксируются route/policy/usage.
 
 ## Быстрый старт
 
@@ -55,7 +54,6 @@ LLM:
 - `COPILOT_SKILL_DIRS` (опционально; список директорий skills через `;`, default `.github/skills`)
 - `COPILOT_DISABLED_SKILLS` (опционально; список skill id через `,`)
 - `COPILOT_WORKING_DIRECTORY` (опционально; рабочая директория сессии Copilot)
-- `OPEN_ROUTER_API_KEY` (для standby/fallback)
 
 Research mode:
 
@@ -77,7 +75,6 @@ Voice:
 Файл: `llm_routing_config.json`
 
 - `active_provider`: основной провайдер (`copilot`)
-- `standby_provider`: fallback провайдер (`openrouter`)
 - `providers`: модельные профили и task-type маршрутизация
 - `policies.text_only`: включает guardrails против write/shell действий
 - `policies.allow_mcp_tools`: разрешение MCP-инструментов
@@ -90,7 +87,6 @@ Voice:
 Новые маркеры:
 
 - `LLM_ROUTE` (provider/model/reason/task_type)
-- `LLM_FALLBACK` (from/to/reason)
 - `LLM_POLICY` (policy decision)
 - `LLM_USAGE` (usage/trace, включая latency)
 
@@ -102,7 +98,7 @@ Voice:
 .venv\Scripts\python.exe scripts\smoke_copilot_provider.py --prompt "Reply with smoke-ok"
 ```
 
-Gateway routing/fallback без сети:
+Gateway routing без сети:
 
 ```bash
 .venv\Scripts\python.exe scripts\smoke_gateway_flow.py
@@ -187,7 +183,7 @@ Rollout:
 
 Rollback:
 
-1. В `llm_routing_config.json` переключить `active_provider` на `openrouter`.
+1. Проверить `gh auth status -h github.com` и переменные `COPILOT_*`.
 2. Перезапустить сервис.
 3. Проверить `LLM_ROUTE` и успешность контрольных сценариев.
 
@@ -201,9 +197,7 @@ selfhosted_assistant/
 │   ├── router.py
 │   └── policy.py
 ├── integrations/
-│   ├── copilot_sdk/
-│   │   └── provider.py
-│   └── openrouter/
+│   └── copilot_sdk/
 │       └── provider.py
 ├── request_handlers/
 ├── request_classifier.py

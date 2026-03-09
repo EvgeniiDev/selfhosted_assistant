@@ -50,9 +50,6 @@ class LLMRouter:
             return []
         return [str(item) for item in allowed if str(item).strip()]
 
-    def get_standby_provider(self) -> str:
-        return str(self.config.get("standby_provider", "")).strip()
-
     def select_model_id(self, provider_name: str, task_type: str) -> str:
         return self._select_model_id(provider_name, task_type)
 
@@ -64,14 +61,9 @@ class LLMRouter:
         provider_name = requested_provider or active_provider
 
         if not self._is_enabled(provider_name, providers):
-            standby_provider = str(self.config.get("standby_provider", ""))
-            if standby_provider and self._is_enabled(standby_provider, providers):
-                provider_name = standby_provider
-                reason = "active_provider_disabled_fallback_to_standby"
-            else:
-                raise ValueError(
-                    f"No enabled provider found. requested={requested_provider!r}, active={active_provider!r}"
-                )
+            raise ValueError(
+                f"Provider is disabled or missing. requested={requested_provider!r}, active={active_provider!r}"
+            )
         else:
             reason = "forced_by_metadata" if requested_provider else "active_provider"
 

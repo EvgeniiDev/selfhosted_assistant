@@ -43,29 +43,7 @@ class LLMGateway:
         resolved_provider = route.provider
         resolved_model = route.model_id
         route_reason = route.reason
-        try:
-            response = provider.generate(request=request, model_id=route.model_id)
-        except Exception as primary_error:
-            standby_provider_name = self.router.get_standby_provider()
-            if standby_provider_name and standby_provider_name != route.provider:
-                standby_provider = self.providers.get(standby_provider_name)
-                if standby_provider is not None:
-                    resolved_provider = standby_provider_name
-                    resolved_model = self.router.select_model_id(standby_provider_name, request.task_type)
-                    route_reason = "runtime_error_fallback_to_standby"
-                    calendar_logger.log_fallback(
-                        from_provider=route.provider,
-                        to_provider=standby_provider_name,
-                        reason=f"primary_error:{type(primary_error).__name__}",
-                    )
-                    response = standby_provider.generate(
-                        request=request,
-                        model_id=resolved_model,
-                    )
-                else:
-                    raise
-            else:
-                raise
+        response = provider.generate(request=request, model_id=route.model_id)
 
         elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
 

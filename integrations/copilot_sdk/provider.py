@@ -7,6 +7,7 @@ import asyncio
 import inspect
 import os
 import threading
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from time import sleep
 from typing import Any, cast
@@ -30,13 +31,19 @@ class _AsyncLoopThread:
         self._ready = threading.Event()
         self._start_lock = threading.Lock()
 
-    def run(self, coroutine):
+    def run(self, coroutine, timeout_seconds: float | None = None):
         self._ensure_started()
         if self._loop is None:
             raise RuntimeError("Copilot async runtime loop is not available.")
 
         future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
-        return future.result()
+        try:
+            if timeout_seconds is None:
+                return future.result()
+            return future.result(timeout=timeout_seconds)
+        except FutureTimeoutError:
+            future.cancel()
+            raise
 
     def stop(self) -> None:
         loop = self._loop
@@ -92,6 +99,10 @@ class CopilotAuthError(CopilotProviderError):
     """Authentication/authorization failure when calling Copilot endpoint."""
 
 
+class CopilotTimeoutError(CopilotProviderError):
+    """Timeout raised when the Copilot SDK call does not finish in time."""
+
+
 class CopilotSDKProvider:
     """Adapter built on the official `github-copilot-sdk` Python package."""
 
@@ -135,11 +146,15 @@ class CopilotSDKProvider:
                         request=request,
                         model_id=model_id,
                         attempt=attempt,
-                    )
+                    ),
+                    timeout_seconds=self._operation_timeout_seconds(),
                 )
                 return response
 
             except CopilotAuthError:
+                raise
+            except CopilotTimeoutError:
+                self._reset_runtime_after_timeout()
                 raise
             except Exception as exc:
                 last_error = exc
@@ -205,8 +220,27 @@ class CopilotSDKProvider:
                 return str(content).strip()
         return ""
 
-    def _run_async(self, coroutine):
-        return self._runtime.run(coroutine)
+    def _run_async(self, coroutine, timeout_seconds: float | None = None):
+        try:
+            return self._runtime.run(coroutine, timeout_seconds=timeout_seconds)
+        except FutureTimeoutError as exc:
+            limit = timeout_seconds if timeout_seconds is not None else self.timeout_seconds
+            raise CopilotTimeoutError(
+                f"Copilot SDK operation exceeded {limit:.1f}s and was aborted."
+            ) from exc
+
+    def _operation_timeout_seconds(self) -> float:
+        return max(float(self.timeout_seconds) + 15.0, float(self.timeout_seconds) * 1.25)
+
+    def _reset_runtime_after_timeout(self) -> None:
+        calendar_logger.warning(
+            "Copilot runtime timed out; resetting client/session state before surfacing the error."
+        )
+        self._persistent_sessions = {}
+        self._session_locks = {}
+        self._client = None
+        self._client_lock = None
+        self._runtime = _AsyncLoopThread()
 
     def _build_messages(self, request: LLMRequest) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []

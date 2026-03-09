@@ -3,7 +3,6 @@ from datetime import datetime
 from logger import calendar_logger
 from models import CalendarEvent, Note, Task, ResearchRequest
 from integrations.copilot_sdk import CopilotSDKProvider
-from integrations.openrouter import OpenRouterStandbyProvider
 from llm_core import LLMGateway, LLMRouter
 from request_handlers import (
     ClassificationHandler,
@@ -17,10 +16,7 @@ class RequestClassifier:
         self.router = LLMRouter()
         self.gateway = LLMGateway(
             router=self.router,
-            providers={
-                "copilot": CopilotSDKProvider(),
-                "openrouter": OpenRouterStandbyProvider(),
-            },
+            providers={"copilot": CopilotSDKProvider()},
         )
         
         self.classification_handler = ClassificationHandler(self.gateway)

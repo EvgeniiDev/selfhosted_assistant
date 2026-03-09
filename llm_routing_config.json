@@ -1,6 +1,5 @@
 {
   "active_provider": "copilot",
-  "standby_provider": "openrouter",
   "providers": {
     "copilot": {
       "enabled": true,
@@ -8,17 +7,6 @@
       "models": [
         {
           "model_id": "gpt-5.4",
-          "task_types": ["calendar_event", "task", "note", "research", "unknown", "classification"],
-          "priority": 1
-        }
-      ]
-    },
-    "openrouter": {
-      "enabled": true,
-      "default_model": "qwen/qwen3-vl-30b-a3b-thinking",
-      "models": [
-        {
-          "model_id": "qwen/qwen3-vl-30b-a3b-thinking",
           "task_types": ["calendar_event", "task", "note", "research", "unknown", "classification"],
           "priority": 1
         }

@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import types
 import unittest
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from unittest.mock import patch
 
-from integrations.copilot_sdk.provider import CopilotSDKProvider
-from llm_core.contracts import LLMRequest
+from integrations.copilot_sdk.provider import CopilotSDKProvider, CopilotTimeoutError
+from llm_core import LLMGateway, LLMRequest, LLMRouter
+
+
+class _TimeoutRuntime:
+    def run(self, coroutine, timeout_seconds=None):
+        coroutine.close()
+        raise FutureTimeoutError()
 
 
 class FakeSession:
@@ -126,6 +133,41 @@ class CopilotProviderPersistentSessionTests(unittest.TestCase):
             session = client.sessions["ephemeral"]
             self.assertEqual(session.destroy_calls, 1)
             provider.close()
+
+    def test_timeout_is_normalized_and_runtime_is_reset(self):
+        provider = CopilotSDKProvider(timeout_seconds=1)
+        original_runtime = provider._runtime
+        provider._runtime = _TimeoutRuntime()
+
+        with self.assertRaises(CopilotTimeoutError):
+            provider.generate(
+                request=LLMRequest(content="hello", task_type="research", text_only=True, allow_mcp_tools=True),
+                model_id="gpt-5.4",
+            )
+
+        self.assertIsNone(provider._client)
+        self.assertIsNone(provider._client_lock)
+        self.assertEqual(provider._persistent_sessions, {})
+        self.assertEqual(provider._session_locks, {})
+        self.assertIsNot(provider._runtime, original_runtime)
+
+    def test_gateway_raises_copilot_timeout_without_fallback(self):
+        provider = CopilotSDKProvider(timeout_seconds=1)
+        provider._runtime = _TimeoutRuntime()
+        gateway = LLMGateway(
+            router=LLMRouter("llm_routing_config.json"),
+            providers={"copilot": provider},
+        )
+
+        with self.assertRaises(CopilotTimeoutError):
+            gateway.generate(
+                LLMRequest(
+                content="Исследуй тему ИИ",
+                task_type="research",
+                text_only=True,
+                allow_mcp_tools=True,
+                )
+            )
 
 
 if __name__ == "__main__":
