@@ -47,6 +47,7 @@ def main() -> int:
         content=wrapped_prompt,
         task_type="research",
         system_prompt="You are a concise research assistant.",
+        metadata={"mcp_server": "tavily"},
         text_only=True,
         allow_mcp_tools=True,
     )

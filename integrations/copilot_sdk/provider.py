@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import asyncio
+import json
 import inspect
 import os
 import threading
@@ -284,6 +285,10 @@ class CopilotSDKProvider:
         if "disabled_skills" in supported and self.disabled_skills:
             kwargs["disabled_skills"] = self.disabled_skills
 
+        mcp_servers = self._build_mcp_servers(request)
+        if "mcp_servers" in supported and mcp_servers:
+            kwargs["mcp_servers"] = mcp_servers
+
         if "skill_directories" not in supported and self.skill_directories:
             calendar_logger.warning(
                 "SessionConfig does not support 'skill_directories' in this SDK version."
@@ -291,6 +296,10 @@ class CopilotSDKProvider:
         if "disabled_skills" not in supported and self.disabled_skills:
             calendar_logger.warning(
                 "SessionConfig does not support 'disabled_skills' in this SDK version."
+            )
+        if "mcp_servers" not in supported and mcp_servers:
+            calendar_logger.warning(
+                "SessionConfig does not support 'mcp_servers' in this SDK version. Tavily MCP will be unavailable."
             )
 
         return SessionConfig(**kwargs)
@@ -314,6 +323,44 @@ class CopilotSDKProvider:
 
     def _parse_csv_list(self, raw_value: str) -> list[str]:
         return [part.strip() for part in (raw_value or "").split(",") if part.strip()]
+
+    def _build_mcp_servers(self, request: LLMRequest) -> dict[str, dict[str, Any]]:
+        if not request.allow_mcp_tools:
+            return {}
+
+        requested_server = str(request.metadata.get("mcp_server", "")).strip().lower()
+        if requested_server and requested_server != "tavily":
+            return {}
+
+        tavily_api_key = os.getenv("TAVILY_API_KEY", "").strip()
+        if not tavily_api_key:
+            calendar_logger.warning(
+                "TAVILY_API_KEY is not configured; Tavily MCP will not be attached to the Copilot session."
+            )
+            return {}
+
+        env = {"TAVILY_API_KEY": tavily_api_key}
+        default_parameters = os.getenv("TAVILY_DEFAULT_PARAMETERS", "").strip()
+        if default_parameters:
+            try:
+                json.loads(default_parameters)
+            except json.JSONDecodeError:
+                calendar_logger.warning(
+                    "TAVILY_DEFAULT_PARAMETERS is not valid JSON and will be ignored."
+                )
+            else:
+                env["DEFAULT_PARAMETERS"] = default_parameters
+
+        return {
+            "tavily": {
+                "type": "local",
+                "command": "npx",
+                "args": ["-y", "tavily-mcp@latest"],
+                "env": env,
+                "tools": ["*"],
+                "timeout": 30000,
+            }
+        }
 
     def _get_requested_session_id(self, request: LLMRequest) -> str:
         return str(request.metadata.get("copilot_session_id", "")).strip()

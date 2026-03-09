@@ -54,6 +54,8 @@ LLM:
 - `COPILOT_SKILL_DIRS` (опционально; список директорий skills через `;`, default `.github/skills`)
 - `COPILOT_DISABLED_SKILLS` (опционально; список skill id через `,`)
 - `COPILOT_WORKING_DIRECTORY` (опционально; рабочая директория сессии Copilot)
+- `TAVILY_API_KEY` (обязательно для research через Tavily MCP)
+- `TAVILY_DEFAULT_PARAMETERS` (опционально; JSON-строка c дефолтными параметрами Tavily MCP, например `{"max_results":5,"search_depth":"advanced"}`)
 
 Research mode:
 
@@ -79,6 +81,37 @@ Voice:
 - `policies.text_only`: включает guardrails против write/shell действий
 - `policies.allow_mcp_tools`: разрешение MCP-инструментов
 - `policies.allowed_mcp_servers`: whitelist MCP серверов
+
+## Tavily MCP
+
+Research flow теперь реально подключает Tavily MCP к Copilot SDK session, если задан `TAVILY_API_KEY`.
+
+Что используется:
+
+- workspace-конфиг VS Code: `.vscode/mcp.json`
+- runtime-конфиг Copilot SDK: `integrations/copilot_sdk/provider.py`
+- research-запросы явно маркируются как `mcp_server=tavily`
+
+Требования:
+
+- установлен `Node.js` с доступным `npx`
+- задан `TAVILY_API_KEY`
+- выполнен `gh auth login -h github.com -w`
+
+Как это работает:
+
+- VS Code видит сервер `tavily` через `.vscode/mcp.json`
+- Python provider добавляет `mcp_servers["tavily"]` в `SessionConfig`
+- сервер запускается командой `npx -y tavily-mcp@latest`
+- при наличии `TAVILY_DEFAULT_PARAMETERS` они пробрасываются в `DEFAULT_PARAMETERS`
+
+Быстрая проверка:
+
+```bash
+.venv\Scripts\python.exe scripts\smoke_research_skill.py --prompt "Исследуй тему retrieval augmented generation"
+```
+
+Если нужен визуальный статус в VS Code, используйте команду `MCP: List Servers` и проверьте, что сервер `tavily` доступен.
 
 ## Логирование и наблюдаемость
 
@@ -168,7 +201,7 @@ Troubleshooting:
 
 - Если research не запускается: проверьте `gh auth login -h github.com -w` и `gh auth status -h github.com`.
 - Если skill не подхватывается: проверьте `COPILOT_SKILL_DIRS` и наличие `SKILL.md` в директории.
-- Если MCP/tools недоступны: ответ может быть частичным, с `UNCERTAIN/NOT_FOUND`.
+- Если MCP/tools недоступны: проверьте `TAVILY_API_KEY`, наличие `npx`, файл `.vscode/mcp.json` и статус сервера через `MCP: List Servers`.
 - Если ошибка записи кэша: бот продолжит отвечать, но без устойчивого follow-up контекста.
 
 ## Rollout / rollback

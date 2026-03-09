@@ -82,6 +82,7 @@ class ResearchService:
             metadata={
                 "is_private": True,
                 "handler": "ResearchMode",
+                "mcp_server": "tavily",
                 "copilot_session_id": copilot_session_id,
             },
             text_only=True,

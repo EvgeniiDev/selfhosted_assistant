@@ -39,6 +39,7 @@ class FakeCopilotClient:
         self.started = False
         self.stopped = False
         self.create_session_calls = 0
+        self.created_configs = []
         self.sessions: dict[str, FakeSession] = {}
         FakeCopilotClient.instances.append(self)
 
@@ -53,6 +54,7 @@ class FakeCopilotClient:
 
     async def create_session(self, config):
         self.create_session_calls += 1
+        self.created_configs.append(config)
         session_id = getattr(config, "session_id", "ephemeral") or "ephemeral"
         session = self.sessions.get(session_id)
         if session is None:
@@ -76,6 +78,7 @@ class FakeSessionConfig:
         "working_directory": str,
         "skill_directories": list[str],
         "disabled_skills": list[str],
+        "mcp_servers": dict[str, dict[str, object]],
     }
 
     def __init__(self, **kwargs):
@@ -84,17 +87,48 @@ class FakeSessionConfig:
 
 
 class CopilotProviderPersistentSessionTests(unittest.TestCase):
+    def test_attaches_tavily_mcp_when_requested_and_configured(self):
+        FakeCopilotClient.instances.clear()
+
+        with patch.dict("os.environ", {"TAVILY_API_KEY": "tvly-test-key"}, clear=False), patch(
+            "integrations.copilot_sdk.provider.CopilotClient", FakeCopilotClient
+        ), patch("integrations.copilot_sdk.provider.MessageOptions", FakeMessageOptions), patch(
+            "integrations.copilot_sdk.provider.SessionConfig", FakeSessionConfig
+        ):
+            provider = CopilotSDKProvider()
+            provider.generate(
+                request=LLMRequest(
+                    content="hello",
+                    task_type="research",
+                    metadata={"mcp_server": "tavily"},
+                    text_only=True,
+                    allow_mcp_tools=True,
+                ),
+                model_id="gpt-4.1",
+            )
+
+            client = FakeCopilotClient.instances[0]
+            config = client.created_configs[0]
+            self.assertTrue(hasattr(config, "mcp_servers"))
+            self.assertIn("tavily", config.mcp_servers)
+            self.assertEqual(config.mcp_servers["tavily"]["command"], "npx")
+            self.assertEqual(config.mcp_servers["tavily"]["args"], ["-y", "tavily-mcp@latest"])
+            self.assertEqual(config.mcp_servers["tavily"]["env"]["TAVILY_API_KEY"], "tvly-test-key")
+            provider.close()
+
     def test_reuses_persistent_session_between_requests(self):
         FakeCopilotClient.instances.clear()
 
-        with patch("integrations.copilot_sdk.provider.CopilotClient", FakeCopilotClient), patch(
-            "integrations.copilot_sdk.provider.MessageOptions", FakeMessageOptions
-        ), patch("integrations.copilot_sdk.provider.SessionConfig", FakeSessionConfig):
+        with patch.dict("os.environ", {"TAVILY_API_KEY": "tvly-test-key"}, clear=False), patch(
+            "integrations.copilot_sdk.provider.CopilotClient", FakeCopilotClient
+        ), patch("integrations.copilot_sdk.provider.MessageOptions", FakeMessageOptions), patch(
+            "integrations.copilot_sdk.provider.SessionConfig", FakeSessionConfig
+        ):
             provider = CopilotSDKProvider()
             request = LLMRequest(
                 content="first",
                 task_type="research",
-                metadata={"copilot_session_id": "chat-session-1"},
+                metadata={"copilot_session_id": "chat-session-1", "mcp_server": "tavily"},
                 text_only=True,
                 allow_mcp_tools=True,
             )
@@ -103,7 +137,7 @@ class CopilotProviderPersistentSessionTests(unittest.TestCase):
                 request=LLMRequest(
                     content="second",
                     task_type="research",
-                    metadata={"copilot_session_id": "chat-session-1"},
+                    metadata={"copilot_session_id": "chat-session-1", "mcp_server": "tavily"},
                     text_only=True,
                     allow_mcp_tools=True,
                 ),
