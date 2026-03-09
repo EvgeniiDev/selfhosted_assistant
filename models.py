@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any, Union, Literal
 from datetime import datetime
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, Field, field_validator
 from dateutil.parser import parse as parse_date
 from logger import calendar_logger
 import os
@@ -15,13 +15,15 @@ class CalendarEvent(BaseModel):
     recurrence: Optional[str] = None
     timezone: str = Field(default_factory=lambda: os.getenv("TIMEZONE", "Europe/Moscow"))
 
-    @validator('start_time', pre=True)
+    @field_validator('start_time', mode='before')
+    @classmethod
     def parse_start_time(cls, v):
         if isinstance(v, str):
             return parse_date(v)
         return v
 
-    @validator('end_time', pre=True)
+    @field_validator('end_time', mode='before')
+    @classmethod
     def parse_end_time(cls, v):
         if v is None:
             return v
@@ -108,7 +110,8 @@ class Task(BaseModel):
     recurrence: Optional[str] = None
     timezone: str = Field(default_factory=lambda: os.getenv("TIMEZONE", "Europe/Moscow"))
 
-    @validator('due_time', pre=True)
+    @field_validator('due_time', mode='before')
+    @classmethod
     def parse_due_time(cls, v):
         if v is None:
             return v
@@ -189,4 +192,3 @@ class ResearchRequest(BaseModel):
 
     original_query: str
     mode_hint: Optional[Literal["new", "followup"]] = None
-
