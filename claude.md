@@ -20,13 +20,14 @@
 - `integrations/claude.md` - внешние LLM adapters и provider-слой.
 - `llm_core/claude.md` - контракты, router, gateway и policy.
 - `llm_inference/claude.md` - локальный inference и privacy helpers.
-- `request_handlers/claude.md` - обработчики intent-ов и их роли.
 - `scripts/claude.md` - служебные и smoke-скрипты.
 - `tests/claude.md` - покрытие тестами и где искать нужный сценарий.
 
 ## Важные root-файлы
 - `assistant_service.py` - orchestration прикладной логики вокруг assistant flow.
 - `request_classifier.py` - LLM-классификация запросов.
+- `intent_classifier.py` - declarative intent classification через registry-конфиг.
+- `capability_registry.py` и `capability_registry.json` - source of truth для capability/intent routing.
 - `google_calendar_client.py` - интеграция с Google Calendar и Google Tasks.
 - `voice_service.py` и `voice_input_service.py` - voice/audio pipeline.
 - `research_context_store.py` - сохранение research-контекста между сообщениями.

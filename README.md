@@ -2,7 +2,7 @@
 
 Telegram-ассистент, который:
 
-- классифицирует входящие запросы (`calendar_event`, `task`, `note`, `unknown`),
+- классифицирует входящие запросы (`calendar_event`, `task`, `note`, `research`, `list_notes`, `unknown`),
 - создает события в Google Calendar,
 - создает задачи в Google Tasks,
 - сохраняет заметки,
@@ -54,6 +54,7 @@ LLM:
 - `COPILOT_SKILL_DIRS` (опционально; список директорий skills через `;`, default `.github/skills`)
 - `COPILOT_DISABLED_SKILLS` (опционально; список skill id через `,`)
 - `COPILOT_WORKING_DIRECTORY` (опционально; рабочая директория сессии Copilot)
+- `CAPABILITY_REGISTRY_PATH` (опционально; путь к JSON-реестру capability -> skill/MCP bindings, default `capability_registry.json`)
 - `TAVILY_API_KEY` (обязательно для research через Tavily MCP)
 - `TAVILY_DEFAULT_PARAMETERS` (опционально; JSON-строка c дефолтными параметрами Tavily MCP, например `{"max_results":5,"search_depth":"advanced"}`)
 
@@ -175,6 +176,18 @@ Research skill smoke:
 
 Поддерживается отдельный intent `research` с использованием skills Copilot runtime (например, `research-pipeline`).
 
+Текущее разделение ответственности:
+
+- skill является источником поведения и выходного формата для research capability,
+- Python host отвечает только за routing, session continuity, local persistence, compact Telegram formatting и команды управления контекстом.
+
+Привязка capability к skill и MCP, а также intent classification contract, теперь хранятся в [capability_registry.json](capability_registry.json).
+Общий routing для skill-backed capabilities теперь проходит через [request_classifier.py](request_classifier.py), [intent_classifier.py](intent_classifier.py) и capability registry.
+Сейчас в новый путь переведены `calendar_event`, `research`, `note` и `task`.
+Для extraction capabilities legacy execution path удален: source of truth только skill + capability registry.
+
+Confirmation contract для `event` и `task` централизован в [confirmation_contracts.py](confirmation_contracts.py).
+
 Пользовательский сценарий в Telegram:
 
 - Новый запрос: `Исследуй тему ...`
@@ -232,7 +245,8 @@ selfhosted_assistant/
 ├── integrations/
 │   └── copilot_sdk/
 │       └── provider.py
-├── request_handlers/
+├── capability_registry.py
+├── intent_classifier.py
 ├── request_classifier.py
 ├── llm_routing_config.json
 └── requirements.txt

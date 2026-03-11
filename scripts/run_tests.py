@@ -23,6 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 NON_TELEGRAM_TESTS = [
     "tests.test_research_service",
+    "tests.test_request_classifier",
     "tests.test_copilot_provider_sessions",
     "tests.test_chat_application_service",
     "tests.test_google_api_clients_setup",

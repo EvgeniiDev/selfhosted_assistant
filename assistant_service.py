@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from datetime import datetime
 
+from confirmation_contracts import EVENT_CONFIRMATION, TASK_CONFIRMATION
 from request_classifier import RequestClassifier
 from google_calendar_client import GoogleCalendarClient
 from google_drive_client import GoogleDriveClient
@@ -60,7 +61,7 @@ class AssistantService:
                     # Календарное событие - возвращаем данные для подтверждения
                     return {
                         'success': True,
-                        'action': 'confirm',
+                        'action': EVENT_CONFIRMATION.action,
                         'event': result,
                         'message': self._format_event_confirmation(result)
                     }
@@ -68,7 +69,7 @@ class AssistantService:
                     # Для задач используем отдельный подтверждающий поток
                     return {
                         'success': True,
-                        'action': 'confirm_task',
+                        'action': TASK_CONFIRMATION.action,
                         'task': result,
                         'message': self._format_task_confirmation(result)
                     }

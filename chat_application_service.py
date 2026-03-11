@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from assistant_service import AssistantService
+from confirmation_contracts import EVENT_CONFIRMATION, TASK_CONFIRMATION
 from logger import calendar_logger
 from research_service import ResearchService
 
@@ -54,10 +55,10 @@ class ChatApplicationService:
                 return ChatResponse(text=f"❌ {result['message']}")
 
             action = result.get("action")
-            if action == "confirm":
+            if action == EVENT_CONFIRMATION.action:
                 pending_id = self._build_pending_id(user_id, message_id)
                 self.pending_confirmations[pending_id] = PendingConfirmation(
-                    kind="event",
+                    kind=EVENT_CONFIRMATION.pending_kind,
                     payload=result["event"],
                 )
                 return ChatResponse(
@@ -67,10 +68,10 @@ class ChatApplicationService:
                     pending_id=pending_id,
                 )
 
-            if action == "confirm_task":
+            if action == TASK_CONFIRMATION.action:
                 pending_id = self._build_pending_id(user_id, message_id)
                 self.pending_confirmations[pending_id] = PendingConfirmation(
-                    kind="task",
+                    kind=TASK_CONFIRMATION.pending_kind,
                     payload=result["task"],
                 )
                 return ChatResponse(
@@ -112,9 +113,9 @@ class ChatApplicationService:
             return ChatResponse(text="❌ Событие не найдено или уже обработано.")
 
         try:
-            if pending.kind == "event":
+            if pending.kind == EVENT_CONFIRMATION.pending_kind:
                 result = self.assistant_service.create_confirmed_event(pending.payload)
-            elif pending.kind == "task":
+            elif pending.kind == TASK_CONFIRMATION.pending_kind:
                 result = self.assistant_service.create_confirmed_task(pending.payload)
             else:
                 return ChatResponse(text="❌ Неподдерживаемый тип для подтверждения.")
@@ -149,7 +150,7 @@ class ChatApplicationService:
 
         self.pending_confirmations.pop(pending_id, None)
 
-        if pending.kind == "event":
+        if pending.kind == EVENT_CONFIRMATION.pending_kind:
             event = pending.payload
             text = f"""✏️ **Редактирование события**
 
@@ -170,7 +171,7 @@ class ChatApplicationService:
             text += "\n```\n\nИли напишите новый запрос заново."
             return ChatResponse(text=text, parse_mode="Markdown")
 
-        if pending.kind == "task":
+        if pending.kind == TASK_CONFIRMATION.pending_kind:
             task = pending.payload
             text = f"""✏️ **Редактирование задачи**
 
