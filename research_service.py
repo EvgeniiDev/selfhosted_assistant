@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from llm_core import LLMGateway, LLMRequest
+from capability_registry import CapabilityRegistry, CapabilitySpec
+from llm_core import LLMGateway
 from logger import calendar_logger
 from research_context_store import ResearchContextStore
+from skill_execution_service import SkillExecutionService, SkillExecutionSpec
 
 
 @dataclass(slots=True)
@@ -23,9 +25,20 @@ class ResearchService:
     which makes the core behavior easy to exercise in integration tests.
     """
 
-    def __init__(self, gateway: LLMGateway, context_store: ResearchContextStore | None = None):
+    def __init__(
+        self,
+        gateway: LLMGateway,
+        context_store: ResearchContextStore | None = None,
+        capability_registry: CapabilityRegistry | None = None,
+    ):
         self.gateway = gateway
         self.context_store = context_store or ResearchContextStore()
+        self.capability_registry = capability_registry or CapabilityRegistry()
+        self.capability_spec = self.capability_registry.get("research")
+        self.skill_service = SkillExecutionService(
+            gateway=self.gateway,
+            spec=self._build_skill_spec(self.capability_spec),
+        )
 
     def reset_chat(self, chat_id: str) -> bool:
         return self.context_store.reset_chat(chat_id)
@@ -75,21 +88,16 @@ class ResearchService:
         mode = self.resolve_mode(chat_id, user_text, mode_hint)
         copilot_session_id = self.context_store.get_or_create_copilot_session_id(chat_id) if chat_id else ""
 
-        request = LLMRequest(
-            content=self._build_prompt(user_text, mode, existing_context),
-            task_type="research",
-            system_prompt="You are a precise research assistant. Follow the requested output structure exactly.",
+        response = self.skill_service.execute(
+            user_text=user_text,
+            mode=mode,
+            context_payload=self._build_skill_context(existing_context),
             metadata={
                 "is_private": True,
                 "handler": "ResearchMode",
-                "mcp_server": "tavily",
                 "copilot_session_id": copilot_session_id,
             },
-            text_only=True,
-            allow_mcp_tools=True,
         )
-
-        response = self.gateway.generate(request)
         response_text = (response.content or "").strip()
         if not response_text:
             raise RuntimeError("empty response")
@@ -109,49 +117,6 @@ class ResearchService:
             sources=self.context_store.list_sources(chat_id),
         )
 
-    def _build_prompt(self, user_text: str, mode: str, context_payload: dict[str, Any]) -> str:
-        if mode == "followup":
-            brief = (context_payload.get("brief") or "").strip()
-            findings = context_payload.get("findings") or []
-            sources = context_payload.get("sources") or []
-
-            top_findings: list[str] = []
-            for item in findings[:10]:
-                claim = str(item.get("claim", "")).strip()
-                status = str(item.get("status", "UNCERTAIN")).strip().upper()
-                if claim:
-                    top_findings.append(f"- [{status}] {claim}")
-
-            top_sources: list[str] = []
-            for item in sources[:10]:
-                url = str(item.get("url", "")).strip()
-                if url:
-                    top_sources.append(f"- {url}")
-
-            return (
-                "Используй skill `research-pipeline`.\n"
-                "Это follow-up к предыдущему исследованию.\n\n"
-                f"Вопрос пользователя: {user_text}\n"
-                "Контекст предыдущего исследования:\n"
-                f"- Краткий итог: {brief or 'нет данных'}\n"
-                f"- Ключевые факты:\n{chr(10).join(top_findings) if top_findings else '- нет данных'}\n"
-                f"- Источники:\n{chr(10).join(top_sources) if top_sources else '- нет данных'}\n\n"
-                "Требования:\n"
-                "1) Ответь по существующему контексту\n"
-                "2) Если данных мало, добери только недостающее\n"
-                "3) Отметь новые данные и новые источники отдельно\n"
-            )
-
-        return (
-            "Используй skill `research-pipeline` из подключенных skills.\n"
-            f"Тема: {user_text}\n\n"
-            "Требования к ответу:\n"
-            "1) Краткий итог (3-7 пунктов)\n"
-            "2) Факты с метками [CONFIRMED]/[UNCERTAIN]/[NOT_FOUND]\n"
-            "3) Список источников (URL)\n"
-            "4) Что осталось непроверенным\n"
-        )
-
     def _compact_answer(self, response_text: str) -> str:
         text = (response_text or "").strip()
         if not text:
@@ -166,6 +131,46 @@ class ResearchService:
         if len(compact) > 2500:
             compact = compact[:2500].rstrip() + "\n\n...\nНапишите 'подробнее' для продолжения."
         return compact
+
+
+    def _build_skill_context(self, context_payload: dict[str, Any]) -> dict[str, Any]:
+        if not context_payload:
+            return {}
+
+        policy = self.capability_spec.context_policy
+        findings_payload = []
+        if policy.include_findings:
+            for item in (context_payload.get("findings") or [])[:policy.max_findings]:
+                claim = str(item.get("claim", "")).strip()
+                status = str(item.get("status", "UNCERTAIN")).strip().upper()
+                if claim:
+                    findings_payload.append({"status": status, "claim": claim})
+
+        source_payload = []
+        if policy.include_sources:
+            for item in (context_payload.get("sources") or [])[:policy.max_sources]:
+                url = str(item.get("url", "")).strip()
+                if url:
+                    source_payload.append(url)
+
+        serialized_context: dict[str, Any] = {}
+        if policy.include_brief:
+            serialized_context["brief"] = str(context_payload.get("brief", "")).strip()
+        if policy.include_findings:
+            serialized_context["findings"] = findings_payload
+        if policy.include_sources:
+            serialized_context["sources"] = source_payload
+        return serialized_context
+
+    def _build_skill_spec(self, capability_spec: CapabilitySpec) -> SkillExecutionSpec:
+        return SkillExecutionSpec(
+            skill_name=capability_spec.skill_name,
+            task_type=capability_spec.task_type,
+            system_prompt=capability_spec.system_prompt,
+            mcp_server=capability_spec.mcp_server,
+            text_only=capability_spec.text_only,
+            allow_mcp_tools=capability_spec.allow_mcp_tools,
+        )
 
     def _is_research_followup(self, text: str) -> bool:
         normalized = (text or "").strip().lower()

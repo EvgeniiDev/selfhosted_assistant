@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from pathlib import Path
 
+from capability_registry import CapabilityRegistry
 from llm_core.contracts import LLMResponse
 from research_context_store import ResearchContextStore
 from research_service import ResearchService
@@ -24,6 +27,59 @@ class FakeGateway:
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def test_research_uses_capability_registry_configuration(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry_path = Path(temp_dir) / "capabilities.json"
+            registry_path.write_text(
+                json.dumps(
+                    {
+                        "capabilities": {
+                            "research": {
+                                "skill_name": "custom-research-skill",
+                                "task_type": "research",
+                                "system_prompt": "Use the custom research contract.",
+                                "mcp_server": "docs-fetch",
+                                "text_only": True,
+                                "allow_mcp_tools": True,
+                                "context_policy": {
+                                    "include_brief": True,
+                                    "include_findings": False,
+                                    "include_sources": True,
+                                    "max_findings": 3,
+                                    "max_sources": 1
+                                }
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            store = ResearchContextStore(base_dir=temp_dir)
+            store.save_turn("chat-1", "Исследуй тему", "[CONFIRMED] Факт\nhttps://example.com/1\nhttps://example.com/2")
+            store.save_artifacts(
+                "chat-1",
+                "Краткий итог\n[CONFIRMED] Факт A\n[CONFIRMED] Факт B\nhttps://example.com/1\nhttps://example.com/2",
+            )
+            gateway = FakeGateway(["[CONFIRMED] Результат\nhttps://example.com/out"])
+            service = ResearchService(
+                gateway=gateway,
+                context_store=store,
+                capability_registry=CapabilityRegistry(config_path=registry_path),
+            )
+
+            service.execute(chat_id="chat-1", user_text="Подробнее", mode_hint="followup")
+
+            request = gateway.requests[0]
+            self.assertEqual(request.metadata.get("skill_name"), "custom-research-skill")
+            self.assertEqual(request.metadata.get("mcp_server"), "docs-fetch")
+            self.assertEqual(request.system_prompt, "Use the custom research contract.")
+            self.assertIn("Use skill `custom-research-skill`", request.content)
+            self.assertIn('"sources": [', request.content)
+            self.assertNotIn('"findings": [', request.content)
+
     def test_followup_uses_same_copilot_session_and_saved_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ResearchContextStore(base_dir=temp_dir)
@@ -45,7 +101,9 @@ class ResearchServiceTests(unittest.TestCase):
                 gateway.requests[0].metadata.get("copilot_session_id"),
                 gateway.requests[1].metadata.get("copilot_session_id"),
             )
-            self.assertIn("Контекст предыдущего исследования", gateway.requests[1].content)
+            self.assertIn("Use skill `research-pipeline`", gateway.requests[1].content)
+            self.assertIn("- mode: followup", gateway.requests[1].content)
+            self.assertIn("Host context JSON:", gateway.requests[1].content)
             self.assertIn("https://example.com/2", second.sources)
 
     def test_multiple_requests_in_same_chat_reuse_same_session_across_three_turns(self):
@@ -68,8 +126,8 @@ class ResearchServiceTests(unittest.TestCase):
             self.assertEqual(session_ids, [session_ids[0], session_ids[0], session_ids[0]])
             self.assertEqual(second.mode, "followup")
             self.assertEqual(third.mode, "followup")
-            self.assertIn("Контекст предыдущего исследования", gateway.requests[1].content)
-            self.assertIn("Контекст предыдущего исследования", gateway.requests[2].content)
+            self.assertIn("Host context JSON:", gateway.requests[1].content)
+            self.assertIn("Host context JSON:", gateway.requests[2].content)
 
     def test_different_chats_get_different_research_sessions(self):
         with tempfile.TemporaryDirectory() as temp_dir:

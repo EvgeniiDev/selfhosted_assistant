@@ -1,0 +1,146 @@
+{
+  "classification": {
+    "task_type": "classification",
+    "system_prompt": "Classify the input text into exactly one category. Output ONLY the category word - no punctuation, no explanation, no other text.\n\nCategories:\n- calendar_event: mentions specific time, date, meetings, appointments, or scheduled events\n- note: general information to remember, ideas, thoughts, lists, or free-form memory capture\n- task: task or reminder the user wants to complete or be reminded about\n- research: requests to investigate a topic, gather facts, compare sources, or perform a deep dive\n- list_notes: requests to show, list, browse, or retrieve saved notes\n- unknown: unclear or ambiguous requests\n\nOutput one of these exact words: calendar_event, task, note, research, list_notes, unknown",
+    "valid_types": [
+      "calendar_event",
+      "task",
+      "note",
+      "research",
+      "list_notes",
+      "unknown"
+    ],
+    "default_intent": "note",
+    "heuristics": {
+      "list_notes": [
+        "мои заметки",
+        "покажи заметки",
+        "список заметок",
+        "все заметки",
+        "my notes",
+        "show notes",
+        "list notes",
+        "get notes"
+      ],
+      "research": [
+        "исследуй",
+        "найди информацию",
+        "проведи исследование",
+        "deep dive",
+        "investigate",
+        "research",
+        "подробнее",
+        "раскрой",
+        "уточни",
+        "пункт",
+        "follow-up",
+        "follow up"
+      ],
+      "task": [
+        "напомни",
+        "сделать",
+        "сделай",
+        "задача",
+        "todo",
+        "to-do",
+        "дедлайн",
+        "нужно"
+      ],
+      "calendar_event": [
+        "встреч",
+        "созвон",
+        "митинг",
+        "календар",
+        "событи",
+        "appointment",
+        "meeting"
+      ]
+    },
+    "datetime_keywords": [
+      "сегодня",
+      "завтра",
+      "послезавтра",
+      "понедельник",
+      "вторник",
+      "сред",
+      "четверг",
+      "пятниц",
+      "суббот",
+      "воскрес",
+      "январ",
+      "феврал",
+      "март",
+      "апрел",
+      "май",
+      "июн",
+      "июл",
+      "август",
+      "сентябр",
+      "октябр",
+      "ноябр",
+      "декабр"
+    ]
+  },
+  "capabilities": {
+    "calendar_event": {
+      "skill_name": "calendar-event-capture",
+      "task_type": "calendar_event",
+      "system_prompt": "You are a precise assistant executing a connected skill. Treat the selected skill as the authoritative workflow and output contract.",
+      "mcp_server": "",
+      "text_only": true,
+      "allow_mcp_tools": false,
+      "context_policy": {
+        "include_brief": false,
+        "include_findings": false,
+        "include_sources": false,
+        "max_findings": 0,
+        "max_sources": 0
+      }
+    },
+    "research": {
+      "skill_name": "research-pipeline",
+      "task_type": "research",
+      "system_prompt": "You are a precise assistant executing a connected skill. Treat the selected skill as the authoritative workflow and output contract.",
+      "mcp_server": "tavily",
+      "text_only": true,
+      "allow_mcp_tools": true,
+      "context_policy": {
+        "include_brief": true,
+        "include_findings": true,
+        "include_sources": true,
+        "max_findings": 10,
+        "max_sources": 10
+      }
+    },
+    "note": {
+      "skill_name": "note-capture",
+      "task_type": "note",
+      "system_prompt": "You are a precise assistant executing a connected skill. Treat the selected skill as the authoritative workflow and output contract.",
+      "mcp_server": "",
+      "text_only": true,
+      "allow_mcp_tools": false,
+      "context_policy": {
+        "include_brief": false,
+        "include_findings": false,
+        "include_sources": false,
+        "max_findings": 0,
+        "max_sources": 0
+      }
+    },
+    "task": {
+      "skill_name": "task-capture",
+      "task_type": "task",
+      "system_prompt": "You are a precise assistant executing a connected skill. Treat the selected skill as the authoritative workflow and output contract.",
+      "mcp_server": "",
+      "text_only": true,
+      "allow_mcp_tools": false,
+      "context_policy": {
+        "include_brief": false,
+        "include_findings": false,
+        "include_sources": false,
+        "max_findings": 0,
+        "max_sources": 0
+      }
+    }
+  }
+}

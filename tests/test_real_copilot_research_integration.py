@@ -55,18 +55,23 @@ class RealCopilotResearchIntegrationTests(unittest.TestCase):
     def test_real_provider_research_prompt_returns_content_and_url(self):
         request = LLMRequest(
             content=(
-                "Используй skill `research-pipeline` из подключенных skills.\n"
-                "Тема: исследуй кратко тему Python package manager uv.\n\n"
-                "Не задавай уточняющих вопросов.\n"
-                "Требования к ответу:\n"
-                "1) Краткий итог (3-5 пунктов)\n"
-                "2) Факты с метками [CONFIRMED]/[UNCERTAIN]/[NOT_FOUND]\n"
-                "3) Список источников (URL)\n"
-                "4) Включи минимум один http(s) URL\n"
+                "Use skill `research-pipeline` from the connected skills as the source of truth.\n"
+                "Host runtime context:\n"
+                "- skill: research-pipeline\n"
+                "- mode: new\n"
+                "- user_request: исследуй кратко тему Python package manager uv и укажи официальные URL источников\n"
+                "- host_context_available: no\n"
+                "Host requirements:\n"
+                "- Follow the selected skill's workflow and output contract.\n"
+                "- Use the provided mode and host context when relevant.\n"
+                "- Return a user-facing answer only.\n"
             ),
             task_type="research",
-            system_prompt="You are a concise research assistant.",
-            metadata={"mcp_server": "tavily"},
+            system_prompt=(
+                "You are a precise assistant executing a connected skill. "
+                "Treat the selected skill as the authoritative workflow and output contract."
+            ),
+            metadata={"mcp_server": "tavily", "skill_name": "research-pipeline"},
             text_only=True,
             allow_mcp_tools=True,
         )
@@ -128,8 +133,8 @@ class RealCopilotResearchIntegrationTests(unittest.TestCase):
 
             second_request_prompt = gateway.requests[1].content
             third_request_prompt = gateway.requests[2].content
-            self.assertIn("Контекст предыдущего исследования", second_request_prompt)
-            self.assertIn("Контекст предыдущего исследования", third_request_prompt)
+            self.assertIn("Host context JSON:", second_request_prompt)
+            self.assertIn("Host context JSON:", third_request_prompt)
 
             combined_outputs = "\n".join(response.content for response in gateway.responses if response.content)
             self.assertTrue(combined_outputs.strip())
