@@ -41,6 +41,10 @@ if str(PROJECT_ROOT) not in sys.path:
 DEFAULT_CHANNELS = [
     "VectorCapital_Investments",
     "ProfitGate",
+    "Polyakov_Ant",
+    "BizLike",
+    "profitanet",
+    "CashflowTime",
 ]
 
 # ---------------------------------------------------------------------------
