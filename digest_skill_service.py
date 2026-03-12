@@ -4,7 +4,7 @@ Digest skill service for Q&A over indexed content.
 
 from typing import Optional
 
-from llm_core.contracts import LLMGateway
+from llm_core.gateway import LLMGateway
 from capability_registry import CapabilityRegistry
 
 from digest.config import load_config

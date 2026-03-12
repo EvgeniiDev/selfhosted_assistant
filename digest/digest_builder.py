@@ -5,7 +5,8 @@ Digest builder for generating topic-based digests.
 from datetime import datetime, timezone
 from typing import Optional
 
-from llm_core.contracts import LLMGateway, LLMRequest
+from llm_core.gateway import LLMGateway
+from llm_core.contracts import LLMRequest
 
 from digest.retrieval_service import RetrievalService
 from digest.models import (
