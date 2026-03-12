@@ -153,3 +153,6 @@ silero-vad/src/silero_vad/data/silero_vad.onnx
 silero-vad/src/silero_vad/data/silero_vad.jit
 silero-vad/src/silero_vad/data/silero_vad_half.onnx
 silero-vad/src/silero_vad/data/silero_vad_16k_op15.onnx
+
+# Digest RAG data
+data/
