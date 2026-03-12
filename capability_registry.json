@@ -1,13 +1,14 @@
 {
   "classification": {
     "task_type": "classification",
-    "system_prompt": "Classify the input text into exactly one category. Output ONLY the category word - no punctuation, no explanation, no other text.\n\nCategories:\n- calendar_event: mentions specific time, date, meetings, appointments, or scheduled events\n- note: general information to remember, ideas, thoughts, lists, or free-form memory capture\n- task: task or reminder the user wants to complete or be reminded about\n- research: requests to investigate a topic, gather facts, compare sources, or perform a deep dive\n- list_notes: requests to show, list, browse, or retrieve saved notes\n- unknown: unclear or ambiguous requests\n\nOutput one of these exact words: calendar_event, task, note, research, list_notes, unknown",
+    "system_prompt": "Classify the input text into exactly one category. Output ONLY the category word - no punctuation, no explanation, no other text.\n\nCategories:\n- calendar_event: mentions specific time, date, meetings, appointments, or scheduled events\n- note: general information to remember, ideas, thoughts, lists, or free-form memory capture\n- task: task or reminder the user wants to complete or be reminded about\n- research: requests to investigate a topic, gather facts, compare sources, or perform a deep dive\n- list_notes: requests to show, list, browse, or retrieve saved notes\n- digest_qa: questions about opinions, positions, or summaries from indexed content (authors, channels, topics)\n- unknown: unclear or ambiguous requests\n\nOutput one of these exact words: calendar_event, task, note, research, list_notes, digest_qa, unknown",
     "valid_types": [
       "calendar_event",
       "task",
       "note",
       "research",
       "list_notes",
+      "digest_qa",
       "unknown"
     ],
     "default_intent": "note",
@@ -54,6 +55,18 @@
         "событи",
         "appointment",
         "meeting"
+      ],
+      "digest_qa": [
+        "что думают",
+        "позиция авторов",
+        "мнение",
+        "дайджест",
+        "digest",
+        "краткое резюме",
+        "summarize",
+        "summary",
+        "what do",
+        "opinion"
       ]
     },
     "datetime_keywords": [
@@ -130,6 +143,21 @@
     "task": {
       "skill_name": "task-capture",
       "task_type": "task",
+      "system_prompt": "You are a precise assistant executing a connected skill. Treat the selected skill as the authoritative workflow and output contract.",
+      "mcp_server": "",
+      "text_only": true,
+      "allow_mcp_tools": false,
+      "context_policy": {
+        "include_brief": false,
+        "include_findings": false,
+        "include_sources": false,
+        "max_findings": 0,
+        "max_sources": 0
+      }
+    },
+    "digest_qa": {
+      "skill_name": "topic-aware-digest",
+      "task_type": "digest",
       "system_prompt": "You are a precise assistant executing a connected skill. Treat the selected skill as the authoritative workflow and output contract.",
       "mcp_server": "",
       "text_only": true,
