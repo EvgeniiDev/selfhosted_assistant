@@ -156,3 +156,7 @@ silero-vad/src/silero_vad/data/silero_vad_16k_op15.onnx
 
 # Digest RAG data
 data/
+channel_export.txt
+
+# Claude Code
+.claude/
