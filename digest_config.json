@@ -1,0 +1,82 @@
+{
+  "topics": {
+    "investing": {
+      "label": "Инвестиции и финансы",
+      "query_aliases": [
+        "инвестиции",
+        "рынок",
+        "акции",
+        "облигации",
+        "портфель",
+        "дивиденды",
+        "investing",
+        "market",
+        "stocks"
+      ]
+    },
+    "business": {
+      "label": "Бизнес и предпринимательство",
+      "query_aliases": [
+        "бизнес",
+        "предпринимательство",
+        "стратегия",
+        "менеджмент",
+        "business",
+        "entrepreneurship"
+      ]
+    }
+  },
+  "sources": [
+    {
+      "source_id": "telegram:VectorCapital_Investments",
+      "type": "telegram",
+      "slug": "VectorCapital_Investments",
+      "topic_ids": ["investing"],
+      "enabled": true
+    },
+    {
+      "source_id": "telegram:ProfitGate",
+      "type": "telegram",
+      "slug": "ProfitGate",
+      "topic_ids": ["investing", "business"],
+      "enabled": true
+    },
+    {
+      "source_id": "telegram:Polyakov_Ant",
+      "type": "telegram",
+      "slug": "Polyakov_Ant",
+      "topic_ids": ["investing", "business"],
+      "enabled": true
+    },
+    {
+      "source_id": "telegram:BizLike",
+      "type": "telegram",
+      "slug": "BizLike",
+      "topic_ids": ["business"],
+      "enabled": true
+    },
+    {
+      "source_id": "telegram:profitanet",
+      "type": "telegram",
+      "slug": "profitanet",
+      "topic_ids": ["investing"],
+      "enabled": true
+    },
+    {
+      "source_id": "telegram:CashflowTime",
+      "type": "telegram",
+      "slug": "CashflowTime",
+      "topic_ids": ["investing", "business"],
+      "enabled": true
+    }
+  ],
+  "embedding_model": "intfloat/multilingual-e5-base",
+  "chroma_path": "data/chroma",
+  "state_path": "data/ingestion_state.json",
+  "digest_output_path": "data/digests",
+  "recent_window_hours": 36,
+  "source_profile_days": 60,
+  "ingestion_interval_minutes": 60,
+  "digest_schedule": "0 21 * * *",
+  "digest_chat_id": null
+}
