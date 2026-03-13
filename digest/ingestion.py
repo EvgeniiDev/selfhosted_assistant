@@ -239,6 +239,9 @@ class IngestionOrchestrator:
         """
         if source_config.type == "telegram":
             return TelegramSourceAdapter(source_config)
+        elif source_config.type == "youtube":
+            from digest.youtube_source import YouTubeSourceAdapter
+            return YouTubeSourceAdapter(source_config)
         else:
             raise ValueError(f"Unsupported source type: {source_config.type}")
 
