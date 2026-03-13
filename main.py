@@ -40,6 +40,22 @@ Best-smal-LLM-GGUF/Gemma3-4B-Medical-COT-SFT-2kstep-4kcol.Q6_K (gemma3) - 10  t/
 
 from telegram_bot import TelegramBot
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _try_start_scheduler():
+    try:
+        from digest.scheduler import DigestScheduler
+        s = DigestScheduler()
+        s.start()
+        logger.info("DigestScheduler started successfully")
+        return s
+    except Exception as e:
+        logger.warning(f"DigestScheduler not started: {e}")
+        return None
+
 
 def main():
     # Получаем настройки из переменных окружения
@@ -49,8 +65,13 @@ def main():
         print("Ошибка: Установите переменную окружения TELEGRAM_BOT_TOKEN")
         return
 
+    scheduler = _try_start_scheduler()
     bot = TelegramBot(telegram_token)
-    bot.run()
+    try:
+        bot.run()
+    finally:
+        if scheduler:
+            scheduler.stop()
 
 if __name__ == "__main__":
     main()
