@@ -56,6 +56,7 @@ class SourceConfig:
     # Type-specific fields stored in metadata
     slug: Optional[str] = None          # For Telegram channels
     channel_id: Optional[str] = None    # For YouTube channels
+    path: Optional[str] = None          # For directory-based PDF sources
 
 
 @dataclass

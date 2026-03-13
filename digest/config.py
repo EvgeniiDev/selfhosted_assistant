@@ -104,10 +104,10 @@ def _parse_config(data: dict) -> DigestConfig:
         if not source_type:
             raise ConfigurationError(f"Source '{source_id}' missing 'type'")
 
-        if source_type not in ["telegram", "youtube"]:
+        if source_type not in ["telegram", "youtube", "pdf"]:
             raise ConfigurationError(
                 f"Source '{source_id}' has invalid type '{source_type}'. "
-                f"Must be 'telegram' or 'youtube'"
+                f"Must be 'telegram', 'youtube', or 'pdf'"
             )
 
         topic_ids = source_data.get("topic_ids", [])

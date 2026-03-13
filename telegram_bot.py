@@ -29,7 +29,10 @@ class TelegramBot:
         self.voice_service = VoiceService(device="cpu")  # Используем CPU для инференса
         self.voice_input_service = VoiceInputService(self.voice_service, self.chat_service)
         self.application = Application.builder().token(token).build()
-        
+
+        self.pdf_ingestor = None
+        self._try_init_pdf_ingestor()
+
         # Настройка разрешенных пользователей
         allowed_users_str = os.getenv('TELEGRAM_ALLOWED_USERS', '').strip()
         if allowed_users_str:
@@ -77,6 +80,17 @@ class TelegramBot:
             return True
             
         return False
+
+    def _try_init_pdf_ingestor(self):
+        try:
+            import fitz  # noqa: F401 — проверка наличия PyMuPDF
+            from digest.config import load_config
+            from digest.index_store import IndexStore
+            from digest.pdf_ingestor import PDFIngestor
+            config = load_config()
+            self.pdf_ingestor = PDFIngestor(config, IndexStore(config))
+        except Exception as e:
+            calendar_logger.warning(f"PDFIngestor init failed: {e}")
 
     async def _send_access_denied_message(self, update: Update):
         """Отправка сообщения о запрете доступа"""
@@ -353,6 +367,10 @@ class TelegramBot:
         elif message.document:
             filename = message.document.file_name
             mime_type = message.document.mime_type
+            # Check for PDF before trying audio
+            if mime_type == "application/pdf" or (filename and filename.lower().endswith(".pdf")):
+                await self.handle_pdf_document(update, context)
+                return
             ext = self._detect_audio_extension(filename, mime_type)
             if ext:
                 audio_obj = message.document
@@ -458,6 +476,9 @@ class TelegramBot:
         elif data.startswith("edit_"):
             event_id = data.replace("edit_", "")
             await self._edit_event(query, event_id)
+        elif data.startswith("pdf_topic:"):
+            topic_id = data.replace("pdf_topic:", "", 1)
+            await self._handle_pdf_topic_selection(query, context, topic_id)
 
     async def _confirm_event(self, query, event_id: str):
         """Подтверждение создания события"""
@@ -543,6 +564,103 @@ class TelegramBot:
             remaining = remaining[split_at:].lstrip("\n")
 
         return chunks
+
+    async def handle_pdf_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle incoming PDF document — ask user to select a topic."""
+        if not self._is_user_allowed(update):
+            await self._send_access_denied_message(update)
+            return
+
+        if self.pdf_ingestor is None:
+            await update.message.reply_text(
+                "❌ PDF-индексация недоступна (PyMuPDF не установлен или конфиг не найден)."
+            )
+            return
+
+        doc = update.message.document
+        context.user_data['pending_pdf'] = {
+            'file_id': doc.file_id,
+            'file_name': doc.file_name or "document.pdf",
+        }
+
+        # Build topic keyboard
+        try:
+            from digest.config import load_config
+            config = load_config()
+            topics = list(config.topics.values())
+        except Exception as e:
+            calendar_logger.warning(f"Failed to load topics for PDF: {e}")
+            topics = []
+
+        if not topics:
+            await update.message.reply_text(
+                "❌ Нет доступных топиков в конфигурации дайджеста."
+            )
+            return
+
+        keyboard = [
+            [InlineKeyboardButton(t.label, callback_data=f"pdf_topic:{t.topic_id}")]
+            for t in topics
+        ]
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="pdf_topic:__cancel__")])
+
+        await update.message.reply_text(
+            f"📄 PDF получен: *{doc.file_name}*\nВыберите топик для индексации:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+    async def _handle_pdf_topic_selection(
+        self,
+        query,
+        context: ContextTypes.DEFAULT_TYPE,
+        topic_id: str,
+    ):
+        """Handle topic selection for PDF ingestion."""
+        import tempfile
+        import os as _os
+
+        if topic_id == "__cancel__":
+            context.user_data.pop('pending_pdf', None)
+            await query.edit_message_text("❌ Индексация PDF отменена.")
+            return
+
+        pending = context.user_data.pop('pending_pdf', None)
+        if not pending:
+            await query.edit_message_text("❌ PDF не найден. Отправьте файл заново.")
+            return
+
+        await query.edit_message_text("⏳ Скачиваю и индексирую PDF...")
+
+        tmp_path = None
+        try:
+            tg_file = await query.get_bot().get_file(pending['file_id'])
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            await tg_file.download_to_drive(tmp_path)
+
+            stats = self.pdf_ingestor.ingest(
+                file_path=tmp_path,
+                topic_ids=[topic_id],
+                source_label=pending['file_name'],
+                file_name=pending['file_name'],
+            )
+
+            await query.edit_message_text(
+                f"✅ PDF проиндексирован: *{stats['title']}*\n"
+                f"Чанков: {stats['chunks']} | "
+                f"Добавлено: {stats['added']} | "
+                f"Обновлено: {stats['updated']} | "
+                f"Пропущено: {stats['skipped']}",
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            calendar_logger.log_error(e, "telegram_bot._handle_pdf_topic_selection")
+            await query.edit_message_text(f"❌ Ошибка при индексации PDF: {e}")
+        finally:
+            if tmp_path and _os.path.exists(tmp_path):
+                _os.unlink(tmp_path)
 
     def run(self):
         """Запуск бота"""
