@@ -22,3 +22,6 @@ llama-index-embeddings-huggingface>=0.3
 chromadb>=0.5
 sentence-transformers>=3.0
 APScheduler>=3.10
+youtube-transcript-api>=0.6
+feedparser>=6.0
+PyMuPDF>=1.24
